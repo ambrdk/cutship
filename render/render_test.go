@@ -67,6 +67,14 @@ func TestPostWithoutVersions(t *testing.T) {
 	}
 }
 
+func TestPostFallbackName(t *testing.T) {
+	s := release.State{Stage: release.Failed, StartedAt: t0, FinishedAt: t0.Add(time.Minute), FailedTask: "plan job", RunURL: "RUN"}
+	want := "❌ <b>Deploy failed: deploy run</b> (after 1m0s)"
+	if got := strings.SplitN(Post(s), "\n", 2)[0]; got != want {
+		t.Fatalf("%q want %q", got, want)
+	}
+}
+
 func TestCommentExample(t *testing.T) {
 	s := release.State{
 		App: "alert-relay", Image: "ghcr.io/ambrdk/alert-relay", From: "v0.2.2", To: "v0.2.3",

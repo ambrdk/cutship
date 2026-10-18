@@ -160,6 +160,42 @@ func TestApplyFailureLines(t *testing.T) {
 	}
 }
 
+func startedAt(minute int) func(*event.Event) {
+	return func(e *event.Event) { e.StartedAt = t0.Add(time.Duration(minute) * time.Minute) }
+}
+
+func TestApplyUsesRunStart(t *testing.T) {
+	var s State
+	s, _ = Apply(s, ev(event.DeployStarted, "deploy:1:1:start", 0))
+	s, _ = Apply(s, ev(event.DeployFinished, "deploy:1:1:alert-relay", 1, result(event.Success), hosts(2), startedAt(0)))
+	s, _ = Apply(s, ev(event.DeployFinished, "deploy:5:1:alert-relay", 61, result(event.Success), hosts(0), startedAt(60)))
+	if d := s.FinishedAt.Sub(s.StartedAt); d != time.Minute {
+		t.Fatalf("redeploy lasted %v", d)
+	}
+	var r State
+	r, _ = Apply(r, ev(event.DeployFinished, "deploy:2:1:alert-relay", 8, failed, startedAt(7)))
+	r, _ = Apply(r, ev(event.DeployFinished, "deploy:2:2:alert-relay", 11, result(event.Success), hosts(1), attempt(2), startedAt(10)))
+	if d := r.FinishedAt.Sub(r.StartedAt); d != time.Minute || r.Stage != Deployed {
+		t.Fatalf("retry lasted %v stage %s", d, r.Stage)
+	}
+	if r.Timeline[len(r.Timeline)-1].Text != "Deployed, took 1m0s" {
+		t.Fatalf("done line %q", r.Timeline[len(r.Timeline)-1].Text)
+	}
+}
+
+func TestApplyFailureShowsError(t *testing.T) {
+	s, _ := Apply(State{}, ev(event.DeployFinished, "deploy:2:1:alert-relay", 8, failed, startedAt(7), func(e *event.Event) { e.Error = "status 503" }))
+	var fail string
+	for _, l := range s.Timeline {
+		if l.Tag == "FAIL" {
+			fail = l.Text
+		}
+	}
+	if fail != "monitoring-01: Wait for app health (status 503)" || s.Error != "status 503" {
+		t.Fatalf("fail line %q error %q", fail, s.Error)
+	}
+}
+
 func TestApplyTrimsTimeline(t *testing.T) {
 	s, _ := Apply(State{}, ev(event.ReleaseOpened, "pr:opened", 0))
 	for i := 1; i < 40; i++ {

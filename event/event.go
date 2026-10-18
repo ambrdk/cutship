@@ -34,6 +34,7 @@ type Event struct {
 	Kind       Kind      `json:"kind"`
 	ID         string    `json:"id"`
 	At         time.Time `json:"at"`
+	StartedAt  time.Time `json:"started_at,omitzero"`
 	App        string    `json:"app,omitempty"`
 	From       string    `json:"from,omitempty"`
 	To         string    `json:"to,omitempty"`

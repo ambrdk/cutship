@@ -100,6 +100,23 @@ func (a *API) PullsByHead(ctx context.Context, repo, head string) ([]Pull, error
 	return out, err
 }
 
+func (a *API) PullFiles(ctx context.Context, repo string, n int) ([]string, error) {
+	var out []string
+	err := a.pages(ctx, fmt.Sprintf("/repos/%s/pulls/%d/files?per_page=100", repo, n), func(raw []byte) error {
+		var page []struct {
+			Filename string `json:"filename"`
+		}
+		if err := json.Unmarshal(raw, &page); err != nil {
+			return err
+		}
+		for _, f := range page {
+			out = append(out, f.Filename)
+		}
+		return nil
+	})
+	return out, err
+}
+
 func (a *API) FileAt(ctx context.Context, repo, path, ref string) ([]byte, error) {
 	resp, err := a.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/contents/%s?ref=%s", repo, path, url.QueryEscape(ref)), nil, "application/vnd.github.raw+json")
 	if err != nil {

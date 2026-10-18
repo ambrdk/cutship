@@ -151,43 +151,55 @@ func (p parser) deploy(ctx context.Context, pl runPayload) ([]Anchored, error) {
 	if err != nil {
 		return nil, err
 	}
-	if failedJob := failedBeforeDeploy(jobs); failedJob != "" {
-		return p.single(ctx, run, event.Failure, failedJob+" job")
-	}
-	if !deployRan(jobs) {
-		return nil, nil
-	}
 	result := map[string]event.Result{"success": event.Success, "cancelled": event.Cancelled}[run.Conclusion]
 	if result == "" {
 		result = event.Failure
 	}
+	if failedJob := failedBeforeDeploy(jobs); failedJob != "" {
+		return p.single(ctx, run, event.Failure, failedJob+" job", false)
+	}
+	if !deployRan(jobs) {
+		if result == event.Success {
+			return p.single(ctx, run, event.Success, "", true)
+		}
+		return p.single(ctx, run, result, stoppedJob(jobs)+" job", false)
+	}
 	files, err := p.api.RunArtifact(ctx, p.repo, run.ID, "deploy-report")
 	if errors.Is(err, github.ErrNotFound) {
-		return p.single(ctx, run, result, "deploy job")
+		return p.single(ctx, run, result, "deploy job", false)
 	}
 	if err != nil {
 		return nil, err
 	}
-	var rep Report
 	var extra extraVars
-	if err := json.Unmarshal(files["deploy-report.json"], &rep); err != nil {
-		return nil, fmt.Errorf("decode deploy-report.json: %w", err)
+	if json.Unmarshal(files["extra.json"], &extra) != nil || len(extra.DeployApps) == 0 {
+		return p.single(ctx, run, result, "deploy job", false)
 	}
-	if err := json.Unmarshal(files["extra.json"], &extra); err != nil {
-		return nil, fmt.Errorf("decode extra.json: %w", err)
+	var rep Report
+	if raw, ok := files["deploy-report.json"]; ok {
+		if err := json.Unmarshal(raw, &rep); err != nil {
+			return nil, fmt.Errorf("decode deploy-report.json: %w", err)
+		}
+	}
+	commit, err := p.commitAnchor(ctx, run.Event, run.HeadSHA)
+	if err != nil {
+		return nil, err
 	}
 	var out []Anchored
 	for _, app := range extra.DeployApps {
 		e := base
-		e.Kind, e.ID, e.At, e.App, e.Result, e.Hosts = event.DeployFinished, fmt.Sprintf("deploy:%d:%d:%s", run.ID, run.RunAttempt, app), run.UpdatedAt, app, result, rep.hosts()
+		e.Kind, e.ID, e.At, e.StartedAt, e.App, e.Result, e.Hosts = event.DeployFinished, fmt.Sprintf("deploy:%d:%d:%s", run.ID, run.RunAttempt, app), run.UpdatedAt, run.RunStartedAt, app, result, rep.hosts()
 		if e.Image, e.To, err = p.image(ctx, app, run.HeadSHA); err != nil {
 			return nil, err
 		}
-		if result == event.Failure && rep.Failure != nil {
-			e.FailedTask, e.Error = rep.Failure.Task, rep.Failure.Message
+		if result == event.Failure {
+			e.FailedTask = "deploy job"
+			if rep.Failure != nil {
+				e.FailedTask, e.Error = rep.Failure.Task, rep.Failure.Message
+			}
 		}
 		e.NoChanges = result == event.Success && noChanges(e.Hosts)
-		pr, err := p.appAnchor(ctx, run.Event, run.HeadSHA, app, e.To)
+		pr, err := p.appAnchor(ctx, run.Event, commit, app, e.To)
 		if err != nil {
 			return nil, err
 		}
@@ -196,13 +208,17 @@ func (p parser) deploy(ctx context.Context, pl runPayload) ([]Anchored, error) {
 	return out, nil
 }
 
-func (p parser) single(ctx context.Context, run workflowRun, result event.Result, task string) ([]Anchored, error) {
+func (p parser) single(ctx context.Context, run workflowRun, result event.Result, task string, emptyPlan bool) ([]Anchored, error) {
 	anchor, err := p.commitAnchor(ctx, run.Event, run.HeadSHA)
 	if err != nil {
 		return nil, err
 	}
+	if emptyPlan && anchor.PR == 0 {
+		return nil, nil
+	}
 	e := anchor.Event
-	e.Kind, e.ID, e.At, e.RunURL, e.Attempt, e.Result = event.DeployFinished, fmt.Sprintf("deploy:%d:%d:run", run.ID, run.RunAttempt), run.UpdatedAt, run.HTMLURL, run.RunAttempt, result
+	e.Kind, e.ID, e.At, e.StartedAt, e.RunURL, e.Attempt, e.Result = event.DeployFinished, fmt.Sprintf("deploy:%d:%d:run", run.ID, run.RunAttempt), run.UpdatedAt, run.RunStartedAt, run.HTMLURL, run.RunAttempt, result
+	e.NoChanges = emptyPlan
 	if result == event.Failure {
 		e.FailedTask = task
 	}
@@ -233,9 +249,25 @@ func (p parser) commitAnchor(ctx context.Context, trigger, sha string) (Anchored
 	return Anchored{}, nil
 }
 
-func (p parser) appAnchor(ctx context.Context, trigger, sha, app, tag string) (int, error) {
+func (p parser) appAnchor(ctx context.Context, trigger string, commit Anchored, app, tag string) (int, error) {
 	if trigger != "push" {
 		return 0, nil
+	}
+	if commit.PR != 0 {
+		if commit.Event.App == app {
+			return commit.PR, nil
+		}
+		if commit.Event.App == "" {
+			files, err := p.api.PullFiles(ctx, p.repo, commit.PR)
+			if err != nil {
+				return 0, err
+			}
+			for _, f := range files {
+				if strings.HasPrefix(f, "apps/"+app+"/") {
+					return commit.PR, nil
+				}
+			}
+		}
 	}
 	if tag != "" {
 		owner, _, _ := strings.Cut(p.repo, "/")
@@ -249,8 +281,7 @@ func (p parser) appAnchor(ctx context.Context, trigger, sha, app, tag string) (i
 			}
 		}
 	}
-	anchor, err := p.commitAnchor(ctx, trigger, sha)
-	return anchor.PR, err
+	return 0, nil
 }
 
 func (p parser) image(ctx context.Context, app, ref string) (string, string, error) {
@@ -273,6 +304,16 @@ func failedBeforeDeploy(jobs []github.Job) string {
 		}
 	}
 	return ""
+}
+
+func stoppedJob(jobs []github.Job) string {
+	for _, j := range jobs {
+		if j.Conclusion != "success" && j.Conclusion != "skipped" {
+			stage, _, _ := strings.Cut(j.Name, " / ")
+			return stage
+		}
+	}
+	return "deploy run"
 }
 
 func deployRan(jobs []github.Job) bool {

@@ -54,6 +54,9 @@ func header(s release.State) string {
 	if name == "" {
 		name = s.Title
 	}
+	if name == "" {
+		name = "deploy run"
+	}
 	full := name
 	if s.To != "" {
 		full += " " + s.To

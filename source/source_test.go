@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ambrdk/deploy-notify/event"
 	"github.com/ambrdk/deploy-notify/github"
@@ -23,6 +24,7 @@ type fakeGitHub struct {
 	heads    map[string]string
 	jobs     map[int64]string
 	reports  map[int64]map[string]string
+	prFiles  map[string]string
 	requests []string
 }
 
@@ -44,6 +46,8 @@ func (f *fakeGitHub) server(t *testing.T) *github.API {
 			_, _ = fmt.Fprint(w, orEmpty(f.commits[strings.TrimSuffix(strings.TrimPrefix(p, "/commits/"), "/pulls")]))
 		case p == "/pulls":
 			_, _ = fmt.Fprint(w, orEmpty(f.heads[r.URL.Query().Get("head")]))
+		case strings.HasPrefix(p, "/pulls/") && strings.HasSuffix(p, "/files"):
+			_, _ = fmt.Fprint(w, orEmpty(f.prFiles[strings.TrimSuffix(strings.TrimPrefix(p, "/pulls/"), "/files")]))
 		case strings.HasSuffix(p, "/jobs"):
 			var id int64
 			_, _ = fmt.Sscanf(p, "/actions/runs/%d/jobs", &id)
@@ -221,8 +225,12 @@ func TestParseDeployRun(t *testing.T) {
 		t.Fatalf("failure event %+v", e)
 	}
 
-	if got := parse(runJSON("deploy", "completed", "push", "success", 3, 1, `[]`)); len(got) != 0 {
-		t.Fatalf("empty plan %+v", got)
+	got = parse(runJSON("deploy", "completed", "push", "success", 3, 1, `[]`))
+	if len(got) != 1 || got[0].PR != 12 || got[0].Event.Result != event.Success || !got[0].Event.NoChanges {
+		t.Fatalf("empty plan closes the anchored thread %+v", got)
+	}
+	if got := parse(runJSON("deploy", "completed", "workflow_dispatch", "success", 3, 1, `[]`)); len(got) != 0 {
+		t.Fatalf("empty dispatch plan %+v", got)
 	}
 
 	got = parse(runJSON("deploy", "completed", "push", "failure", 6, 1, `[]`))
@@ -243,6 +251,57 @@ func TestParseDeployRun(t *testing.T) {
 	got = parse(runJSON("deploy", "completed", "workflow_dispatch", "success", 5, 1, `[]`))
 	if len(got) != 1 || got[0].PR != 0 || !got[0].Event.NoChanges || got[0].Event.App != "alert-relay" || got[0].Event.To != "v0.2.3" {
 		t.Fatalf("dispatch %+v", got)
+	}
+}
+
+func TestParseDeployEdgeRuns(t *testing.T) {
+	jobsOK := `[{"name":"ci / lint","conclusion":"success"},{"name":"plan","conclusion":"success"},{"name":"deploy / deploy","conclusion":"success"}]`
+	envPR := `[{"number":20,"title":"fix(apps): tune alert-relay env","html_url":"https://github.com/ambrdk/ansible/pull/20","merged_at":"2026-10-18T11:00:00Z","head":{"ref":"fix/env","sha":"h20"}}]`
+	f := &fakeGitHub{
+		files:   map[string]string{"m1:apps/alert-relay/app.yml": image("v0.2.3"), "m2:apps/alert-relay/app.yml": image("v0.2.3")},
+		commits: map[string]string{"m1": mergedPR, "m2": envPR},
+		heads:   map[string]string{"ambrdk:bump/alert-relay-v0.2.3": mergedPR},
+		prFiles: map[string]string{"20": `[{"filename":"apps/alert-relay/env.j2"}]`},
+		jobs: map[int64]string{
+			10: jobsOK, 11: jobsOK,
+			12: `[{"name":"ci / lint","conclusion":"cancelled"},{"name":"plan","conclusion":"skipped"},{"name":"deploy","conclusion":"skipped"}]`,
+		},
+		reports: map[int64]map[string]string{
+			10: report(1, "null"),
+			11: {"extra.json": `{"deploy_apps":["alert-relay"]}`},
+		},
+	}
+	api := f.server(t)
+	parse := func(payload string) []Anchored {
+		t.Helper()
+		got, err := Parse(context.Background(), api, repo, "workflow_run", []byte(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	onM2 := func(s string) string { return strings.Replace(s, `"head_sha":"m1"`, `"head_sha":"m2"`, 1) }
+
+	got := parse(onM2(runJSON("deploy", "requested", "push", "", 10, 1, `[]`)))
+	if len(got) != 1 || got[0].PR != 20 {
+		t.Fatalf("env PR start %+v", got)
+	}
+	got = parse(onM2(runJSON("deploy", "completed", "push", "success", 10, 1, `[]`)))
+	if len(got) != 1 || got[0].PR != 20 || got[0].Event.App != "alert-relay" {
+		t.Fatalf("env PR finish %+v", got)
+	}
+	if want := "2026-10-18T10:05:14Z"; got[0].Event.StartedAt.Format(time.RFC3339) != want {
+		t.Fatalf("started at %v", got[0].Event.StartedAt)
+	}
+
+	got = parse(runJSON("deploy", "completed", "push", "failure", 11, 1, `[]`))
+	if len(got) != 1 || got[0].PR != 12 || got[0].Event.Result != event.Failure || got[0].Event.FailedTask != "deploy job" {
+		t.Fatalf("report without deploy-report.json %+v", got)
+	}
+
+	got = parse(runJSON("deploy", "completed", "push", "cancelled", 12, 1, `[]`))
+	if len(got) != 1 || got[0].PR != 12 || got[0].Event.Result != event.Cancelled {
+		t.Fatalf("cancelled during ci %+v", got)
 	}
 }
 

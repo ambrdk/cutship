@@ -44,6 +44,7 @@ type State struct {
 	Commit     string       `json:"commit,omitempty"`
 	Hosts      []event.Host `json:"hosts,omitempty"`
 	FailedTask string       `json:"failed_task,omitempty"`
+	Error      string       `json:"error,omitempty"`
 	StartedAt  time.Time    `json:"started_at,omitzero"`
 	FinishedAt time.Time    `json:"finished_at,omitzero"`
 	NoChanges  bool         `json:"no_changes,omitempty"`
@@ -139,17 +140,21 @@ func finished(s *State, e event.Event) {
 	for _, h := range e.Hosts {
 		s.add(e.At, "HOST", hostLine(h))
 	}
-	if s.StartedAt.IsZero() || (retryable(s.Stage) && e.Result == event.Success) {
-		s.StartedAt = e.At
+	start := e.StartedAt
+	if start.IsZero() {
+		start = s.StartedAt
 	}
-	lasted := e.At.Sub(s.StartedAt).Round(time.Second).String()
+	if start.IsZero() {
+		start = e.At
+	}
+	lasted := e.At.Sub(start).Round(time.Second).String()
 	if e.Result == event.Success {
 		s.add(e.At, "DONE", "Deployed, took "+lasted)
 		s.Stage = Deployed
 		s.Hosts = e.Hosts
 		s.NoChanges = e.NoChanges
-		s.FailedTask = ""
-		s.FinishedAt = e.At
+		s.FailedTask, s.Error = "", ""
+		s.StartedAt, s.FinishedAt = start, e.At
 		return
 	}
 	s.add(e.At, "FAIL", failLine(e))
@@ -157,8 +162,8 @@ func finished(s *State, e event.Event) {
 	if s.Stage != Deployed {
 		s.Stage = Failed
 		s.Hosts = e.Hosts
-		s.FailedTask = e.FailedTask
-		s.FinishedAt = e.At
+		s.FailedTask, s.Error = e.FailedTask, e.Error
+		s.StartedAt, s.FinishedAt = start, e.At
 	}
 }
 
@@ -205,12 +210,17 @@ func hostLine(h event.Host) string {
 }
 
 func failLine(e event.Event) string {
+	text := e.FailedTask
 	for _, h := range e.Hosts {
 		if h.Failed > 0 || h.Unreachable > 0 {
-			return h.Name + ": " + e.FailedTask
+			text = h.Name + ": " + e.FailedTask
+			break
 		}
 	}
-	return e.FailedTask
+	if e.Error != "" {
+		text += " (" + e.Error + ")"
+	}
+	return text
 }
 
 func sortLines(lines []Line) []Line {
