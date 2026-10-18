@@ -19,10 +19,7 @@ import (
 	"github.com/ambrdk/notifykit/thread"
 )
 
-const (
-	copyWait     = 30 * time.Second
-	longestRetry = 10 * time.Second
-)
+const copyWait = 30 * time.Second
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -69,16 +66,9 @@ func run(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	chat, err := tg.GetChat(ctx, channel)
-	if err != nil {
-		return err
-	}
-	if chat.LinkedChatID == 0 {
-		log.Warn("the channel has no discussion group, posting without comments")
-	}
-	messenger := notify.WarnWithoutComment(notify.Retry(thread.New(tg, channel, chat.LinkedChatID, copyWait), longestRetry), log, chat.LinkedChatID != 0)
+	th := thread.New(tg, channel, thread.Waiting(tg, copyWait))
 	st := store.NewPRComment(api, repo, func(r store.Record) string { return postLink(channel, r.IDs.PostID) })
-	return notify.Handle(ctx, events, st, messenger)
+	return notify.Handle(ctx, events, st, th, log)
 }
 
 func postLink(channel string, postID int64) string {

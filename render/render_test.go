@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -89,27 +90,38 @@ func TestCommentExample(t *testing.T) {
 	want := "📋 Deploy Details\nApp: alert-relay\nImage: ghcr.io/ambrdk/alert-relay\n       v0.2.2 → v0.2.3\n" +
 		"Change: chore(apps): bump alert-relay to v0.2.3 (#12)\nMerged by: ambrdk · commit 1a2b3c4\n\n📋 Timeline\n" +
 		"[10:01:02 UTC] [PR] Bump opened: v0.2.2 → v0.2.3\n[10:01:40 UTC] [CI] Checks passed\n[10:06:22 UTC] [DONE] Deployed, took 1m08s\n[10:07:00 UTC] [REOPENED]"
-	if got := Comment(s); got != want {
+	if got := Comment(s, 0); got != want {
 		t.Fatalf("comment\n%q\nwant\n%q", got, want)
 	}
 }
 
-func TestRenderEscapesAndTruncates(t *testing.T) {
+func TestRenderEscapes(t *testing.T) {
 	s := example()
 	s.Stage = release.Failed
 	s.FailedTask = "<script>&"
 	if !strings.Contains(Post(s), "Failed at: &lt;script&gt;&amp;") {
 		t.Fatalf("not escaped: %q", Post(s))
 	}
-	for i := range 200 {
-		s.Timeline = append(s.Timeline, release.Line{At: t0.Add(time.Duration(i) * time.Second), Tag: "HOST", Text: strings.Repeat("x", 100)})
+}
+
+func TestCommentSkip(t *testing.T) {
+	s := example()
+	s.Timeline = nil
+	for i := range 10 {
+		s.Timeline = append(s.Timeline, release.Line{At: t0.Add(time.Duration(i) * time.Second), Tag: "HOST", Text: fmt.Sprintf("line%02d", i)})
 	}
-	s.Timeline[0].Text = "first"
-	c := Comment(s)
-	if n := len([]rune(c)); n > 4096 {
-		t.Fatalf("comment has %d runes", n)
+	c := Comment(s, 3)
+	for _, want := range []string{"line00", "line04", "line09"} {
+		if !strings.Contains(c, want) {
+			t.Fatalf("%s missing in %q", want, c)
+		}
 	}
-	if !strings.Contains(c, "[10:00:00 UTC] [HOST] first") || !strings.Contains(c, "[10:03:19 UTC]") {
-		t.Fatalf("first or last line missing")
+	for _, gone := range []string{"line01", "line03"} {
+		if strings.Contains(c, gone) {
+			t.Fatalf("%s kept in %q", gone, c)
+		}
+	}
+	if Comment(s, 50) != Comment(s, 51) || !strings.Contains(Comment(s, 50), "line00") || strings.Contains(Comment(s, 50), "line09") {
+		t.Fatalf("over-skip %q", Comment(s, 50))
 	}
 }

@@ -12,8 +12,6 @@ import (
 	"github.com/ambrdk/deploy-notify/release"
 )
 
-const maxRunes = 4096
-
 //go:embed post.tmpl comment.tmpl
 var files embed.FS
 
@@ -32,13 +30,11 @@ func Post(s release.State) string {
 	return execute("post.tmpl", s)
 }
 
-func Comment(s release.State) string {
-	out := execute("comment.tmpl", s)
-	for len([]rune(out)) > maxRunes && len(s.Timeline) > 1 {
-		s.Timeline = append(s.Timeline[:1:1], s.Timeline[2:]...)
-		out = execute("comment.tmpl", s)
+func Comment(s release.State, skip int) string {
+	if skip > 0 && len(s.Timeline) > 1 {
+		s.Timeline = append(s.Timeline[:1:1], s.Timeline[1+min(skip, len(s.Timeline)-1):]...)
 	}
-	return out
+	return execute("comment.tmpl", s)
 }
 
 func execute(name string, s release.State) string {
