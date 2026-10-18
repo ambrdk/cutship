@@ -76,7 +76,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	if chat.LinkedChatID == 0 {
 		log.Warn("the channel has no discussion group, posting without comments")
 	}
-	messenger := notify.Retry(thread.New(tg, channel, chat.LinkedChatID, copyWait), longestRetry)
+	messenger := notify.WarnWithoutComment(notify.Retry(thread.New(tg, channel, chat.LinkedChatID, copyWait), longestRetry), log, chat.LinkedChatID != 0)
 	st := store.NewPRComment(api, repo, func(r store.Record) string { return postLink(channel, r.IDs.PostID) })
 	return notify.Handle(ctx, events, st, messenger)
 }

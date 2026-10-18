@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/ambrdk/deploy-notify/event"
@@ -54,6 +55,24 @@ func handle(ctx context.Context, a source.Anchored, st store.Store, m Messenger)
 		return err
 	}
 	return st.Save(ctx, a.PR, store.Record{State: s, IDs: ids})
+}
+
+type commentWatch struct {
+	m          Messenger
+	log        *slog.Logger
+	discussion bool
+}
+
+func WarnWithoutComment(m Messenger, log *slog.Logger, discussion bool) Messenger {
+	return commentWatch{m: m, log: log, discussion: discussion}
+}
+
+func (w commentWatch) Publish(ctx context.Context, ids thread.IDs, post, comment string) (thread.IDs, error) {
+	got, err := w.m.Publish(ctx, ids, post, comment)
+	if err == nil && w.discussion && got.PostID != 0 && got.CommentID == 0 {
+		w.log.Warn("the post went out without a comment: its copy did not show up in the discussion group in time; check that the bot is an admin of the discussion group", "post_id", got.PostID)
+	}
+	return got, err
 }
 
 type retrying struct {

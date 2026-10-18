@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -143,6 +144,29 @@ func TestHandleSavesIDsOnPartialFailure(t *testing.T) {
 	}
 	if m.calls[1] != (thread.IDs{PostID: 101}) {
 		t.Fatalf("second publish got %+v, a new post would be sent", m.calls[1])
+	}
+}
+
+type noCopyMessenger struct{}
+
+func (noCopyMessenger) Publish(_ context.Context, _ thread.IDs, _, _ string) (thread.IDs, error) {
+	return thread.IDs{PostID: 101}, nil
+}
+
+func TestWarnWithoutComment(t *testing.T) {
+	var buf strings.Builder
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	if _, err := WarnWithoutComment(noCopyMessenger{}, log, true).Publish(context.Background(), thread.IDs{}, "p", "c"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "level=WARN") || !strings.Contains(buf.String(), "admin of the discussion group") || !strings.Contains(buf.String(), "post_id=101") {
+		t.Fatalf("log %q", buf.String())
+	}
+	buf.Reset()
+	_, _ = WarnWithoutComment(noCopyMessenger{}, log, false).Publish(context.Background(), thread.IDs{}, "p", "c")
+	_, _ = WarnWithoutComment(&fakeMessenger{}, log, true).Publish(context.Background(), thread.IDs{}, "p", "c")
+	if buf.Len() != 0 {
+		t.Fatalf("unexpected log %q", buf.String())
 	}
 }
 
