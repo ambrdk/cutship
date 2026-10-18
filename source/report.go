@@ -1,0 +1,76 @@
+package source
+
+import (
+	"bufio"
+	"bytes"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/ambrdk/deploy-notify/event"
+)
+
+type ReportHost struct {
+	OK          int `json:"ok"`
+	Changed     int `json:"changed"`
+	Failed      int `json:"failed"`
+	Unreachable int `json:"unreachable"`
+	Skipped     int `json:"skipped"`
+}
+
+type Failure struct {
+	Host    string `json:"host"`
+	Task    string `json:"task"`
+	Message string `json:"message"`
+}
+
+type Report struct {
+	Version    int                   `json:"version"`
+	StartedAt  time.Time             `json:"started_at"`
+	FinishedAt time.Time             `json:"finished_at"`
+	Hosts      map[string]ReportHost `json:"hosts"`
+	Failure    *Failure              `json:"failure"`
+}
+
+type extraVars struct {
+	DeployApps []string `json:"deploy_apps"`
+}
+
+func (r Report) hosts() []event.Host {
+	out := make([]event.Host, 0, len(r.Hosts))
+	for name, h := range r.Hosts {
+		out = append(out, event.Host{Name: name, OK: h.OK, Changed: h.Changed, Failed: h.Failed, Unreachable: h.Unreachable})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func imageOf(appYML []byte) (repository, tag string) {
+	sc := bufio.NewScanner(bytes.NewReader(appYML))
+	for sc.Scan() {
+		value, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "image:")
+		if !ok {
+			continue
+		}
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		slash := strings.LastIndex(value, "/")
+		colon := strings.LastIndex(value, ":")
+		if colon > slash {
+			return value[:colon], value[colon+1:]
+		}
+		return value, ""
+	}
+	return "", ""
+}
+
+func bumpBranch(ref string) (app, tag string, ok bool) {
+	rest, ok := strings.CutPrefix(ref, "bump/")
+	if !ok {
+		return "", "", false
+	}
+	i := strings.LastIndex(rest, "-v")
+	if i <= 0 {
+		return "", "", false
+	}
+	return rest[:i], rest[i+1:], true
+}
