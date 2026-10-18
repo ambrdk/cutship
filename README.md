@@ -60,6 +60,8 @@ All runs share one concurrency group with `queue: max`, so events are handled on
 
 `workflow_run` only fires when the workflow file is on the default branch.
 
+Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `deploy-notify_linux_amd64`. The action finds the newest version tag on the commit it was pinned to and runs that binary, which takes a few seconds. Pinned to a commit without a release, it builds from source instead.
+
 ## Environment
 
 The action sets these for `deploy-notify handle`:

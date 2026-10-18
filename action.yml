@@ -14,14 +14,41 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+    - id: release
+      shell: bash
+      env:
+        ACTION_REF: ${{ github.action_ref }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        dir="$RUNNER_TEMP/deploy-notify"
+        mkdir -p "$dir"
+        tag=""
+        if [[ -n "$ACTION_REF" ]] && tags="$(gh api repos/ambrdk/deploy-notify/tags --paginate 2>/dev/null)"; then
+          tag="$(printf '%s' "$tags" | "$GITHUB_ACTION_PATH/scripts/pick_tag.sh" "$ACTION_REF")"
+        fi
+        if [[ -n "$tag" ]] && gh release download "$tag" -R ambrdk/deploy-notify -p deploy-notify_linux_amd64 -D "$dir" --clobber; then
+          chmod +x "$dir/deploy-notify_linux_amd64"
+          echo "binary=$dir/deploy-notify_linux_amd64" >> "$GITHUB_OUTPUT"
+          echo "using released binary $tag"
+        else
+          echo "no released binary for ${ACTION_REF:-this ref}, building from source"
+        fi
+    - if: steps.release.outputs.binary == ''
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version-file: ${{ github.action_path }}/go.mod
         cache: false
-    - shell: bash
+    - id: build
+      if: steps.release.outputs.binary == ''
+      shell: bash
       working-directory: ${{ github.action_path }}
+      run: |
+        go build -o "$RUNNER_TEMP/deploy-notify/deploy-notify_linux_amd64" ./cmd/deploy-notify
+        echo "binary=$RUNNER_TEMP/deploy-notify/deploy-notify_linux_amd64" >> "$GITHUB_OUTPUT"
+    - shell: bash
       env:
+        BINARY: ${{ steps.release.outputs.binary || steps.build.outputs.binary }}
         TELEGRAM_BOT_TOKEN: ${{ inputs.telegram-token }}
         TELEGRAM_CHANNEL_ID: ${{ inputs.telegram-channel-id }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
-      run: go run ./cmd/deploy-notify handle
+      run: '"$BINARY" handle'
