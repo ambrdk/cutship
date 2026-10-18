@@ -1,0 +1,23 @@
+📋 Deploy Details
+{{- if .App}}
+App: {{esc .App}}
+{{- end}}
+{{- if .Image}}
+Image: {{esc .Image}}
+{{- if .To}}
+       {{versions .}}
+{{- end}}
+{{- else if .To}}
+Version: {{versions .}}
+{{- end}}
+{{- if .Title}}
+Change: {{esc .Title}}{{if .PR}} (#{{.PR}}){{end}}
+{{- end}}
+{{- if .MergedBy}}
+Merged by: {{esc .MergedBy}}{{if .Commit}} · commit {{short .Commit}}{{end}}
+{{- end}}
+
+📋 Timeline
+{{- range .Timeline}}
+{{line .}}
+{{- end}}

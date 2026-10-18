@@ -1,0 +1,17 @@
+{{header .}}
+{{- if .To}}
+
+Version: {{if .From}}{{esc .From}} → {{end}}<b>{{esc .To}}</b>
+{{- else if .Title}}
+
+Change: {{esc .Title}}
+{{- end}}
+{{- if .Hosts}}
+Hosts: {{hosts .Hosts}}
+{{- end}}
+{{- with failedAt .}}
+Failed at: {{esc .}}
+{{- end}}
+{{- with links .}}
+{{.}}
+{{- end}}
