@@ -216,7 +216,7 @@ func TestParseDeployRun(t *testing.T) {
 		t.Fatalf("success %+v", got)
 	}
 	e := got[0].Event
-	if e.Kind != event.DeployFinished || e.Result != event.Success || e.App != "alert-relay" || e.To != "v0.2.3" || len(e.Hosts) != 2 || e.Hosts[0].Name != "monitoring-01" || e.Hosts[0].Changed != 2 || e.NoChanges || e.ID != "deploy:1:1:alert-relay" {
+	if e.Kind != event.DeployFinished || e.Result != event.Success || e.App != "alert-relay" || e.To != "v0.2.3" || len(e.Hosts) != 1 || e.Hosts[0].Name != "monitoring-01" || e.Hosts[0].Changed != 2 || e.NoChanges || e.ID != "deploy:1:1:alert-relay" {
 		t.Fatalf("success event %+v", e)
 	}
 
@@ -302,6 +302,22 @@ func TestParseDeployEdgeRuns(t *testing.T) {
 	got = parse(runJSON("deploy", "completed", "push", "cancelled", 12, 1, `[]`))
 	if len(got) != 1 || got[0].PR != 12 || got[0].Event.Result != event.Cancelled {
 		t.Fatalf("cancelled during ci %+v", got)
+	}
+}
+
+func TestReportHostsSkipIdle(t *testing.T) {
+	r := Report{Hosts: map[string]ReportHost{
+		"monitoring-01": {OK: 18},
+		"node-05":       {OK: 1},
+		"panel-01":      {OK: 1, Unreachable: 1},
+		"node-07":       {OK: 1, Failed: 1},
+	}}
+	var names []string
+	for _, h := range r.hosts() {
+		names = append(names, h.Name)
+	}
+	if strings.Join(names, ",") != "monitoring-01,node-07,panel-01" {
+		t.Fatalf("hosts %v", names)
 	}
 }
 
