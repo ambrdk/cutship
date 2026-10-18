@@ -15,7 +15,10 @@ import (
 	"time"
 )
 
-var ErrNotFound = errors.New("github: not found")
+var (
+	ErrNotFound  = errors.New("github: not found")
+	ErrForbidden = errors.New("github: forbidden")
+)
 
 type API struct {
 	base  string
@@ -57,6 +60,17 @@ type Job struct {
 
 func New(baseURL, token string) *API {
 	return &API{base: strings.TrimRight(baseURL, "/"), token: token, http: &http.Client{Timeout: 30 * time.Second}}
+}
+
+const ActionsBot = "github-actions[bot]"
+
+func (a *API) Viewer(ctx context.Context) (User, error) {
+	var u User
+	err := a.json(ctx, http.MethodGet, "/user", nil, &u)
+	if errors.Is(err, ErrForbidden) && strings.Contains(err.Error(), "Resource not accessible by integration") {
+		return User{Login: ActionsBot}, nil
+	}
+	return u, err
 }
 
 func (a *API) IssueComments(ctx context.Context, repo string, pr int) ([]Comment, error) {
@@ -268,6 +282,11 @@ func (a *API) do(ctx context.Context, method, path string, body io.Reader, accep
 	if resp.StatusCode == http.StatusNotFound {
 		_ = resp.Body.Close()
 		return nil, fmt.Errorf("%s %s: %w", method, path, ErrNotFound)
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%s %s: %w: %s", method, path, ErrForbidden, strings.TrimSpace(string(raw)))
 	}
 	if resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512))

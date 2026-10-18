@@ -29,6 +29,16 @@ type fakeGitHub struct {
 	comments []comment
 	posts    int
 	patches  int
+	login    string
+	userCode int
+	users    int
+}
+
+func (f *fakeGitHub) author() string {
+	if f.login != "" {
+		return f.login
+	}
+	return "github-actions[bot]"
 }
 
 func (f *fakeGitHub) add(login, body string) {
@@ -41,13 +51,24 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/user":
+		f.users++
+		switch {
+		case f.userCode != 0:
+			w.WriteHeader(f.userCode)
+		case f.login == "":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"Resource not accessible by integration"}`))
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]string{"login": f.login})
+		}
 	case r.Method == http.MethodGet && r.URL.Path == "/repos/o/r/issues/6/comments":
 		_ = json.NewEncoder(w).Encode(f.comments)
 	case r.Method == http.MethodPost && r.URL.Path == "/repos/o/r/issues/6/comments":
 		var in struct{ Body string }
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		f.posts++
-		f.add("github-actions[bot]", in.Body)
+		f.add(f.author(), in.Body)
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(f.comments[len(f.comments)-1])
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/repos/o/r/issues/comments/"):
@@ -141,6 +162,44 @@ func TestPRCommentStoreUnknownVersion(t *testing.T) {
 	st := newStore(t, f)
 	if _, ok, err := st.Load(context.Background(), 6); ok || err != nil {
 		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+}
+
+func TestPRCommentStorePersonalToken(t *testing.T) {
+	f := &fakeGitHub{login: "ambrdk-deployer"}
+	f.add("github-actions[bot]", "stale\n\n<!-- deploy-notify:v1 {\"ids\":{\"post_id\":7}} -->")
+	st := newStore(t, f)
+	ctx := context.Background()
+	if _, ok, err := st.Load(ctx, 6); ok || err != nil {
+		t.Fatalf("foreign author loaded ok=%v err=%v", ok, err)
+	}
+	if err := st.Save(ctx, 6, record()); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save(ctx, 6, record()); err != nil {
+		t.Fatal(err)
+	}
+	fresh := newStore(t, f)
+	got, ok, err := fresh.Load(ctx, 6)
+	if err != nil || !ok || got.IDs != record().IDs {
+		t.Fatalf("reload %+v ok=%v err=%v", got, ok, err)
+	}
+	if f.posts != 1 || f.patches != 1 {
+		t.Fatalf("posts %d patches %d", f.posts, f.patches)
+	}
+	if f.users != 2 {
+		t.Fatalf("user lookups %d, want one per store", f.users)
+	}
+}
+
+func TestPRCommentStoreUserLookupFails(t *testing.T) {
+	f := &fakeGitHub{userCode: http.StatusBadGateway}
+	st := newStore(t, f)
+	if _, _, err := st.Load(context.Background(), 6); err == nil {
+		t.Fatal("load succeeded without knowing the token author")
+	}
+	if err := st.Save(context.Background(), 6, record()); err == nil || f.posts != 0 {
+		t.Fatalf("save err=%v posts=%d", err, f.posts)
 	}
 }
 
