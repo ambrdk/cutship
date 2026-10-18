@@ -1,0 +1,27 @@
+name: deploy-notify
+description: Keep one Telegram post per release up to date from pull request and deploy events
+inputs:
+  telegram-token:
+    description: Token of the bot that posts release threads
+    required: true
+  telegram-channel-id:
+    description: Numeric id of the Telegram channel
+    required: true
+  github-token:
+    description: Token that can read the repository, its runs and artifacts, and write pull request comments
+    required: false
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+    - shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ inputs.telegram-token }}
+        TELEGRAM_CHANNEL_ID: ${{ inputs.telegram-channel-id }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: go run ./cmd/deploy-notify handle
