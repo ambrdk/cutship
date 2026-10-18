@@ -29,6 +29,10 @@ check "only moving tag" "" ddd '[{"name":"v1","commit":{"sha":"ddd"}}]'
 check "unknown sha" "" eee "$tags"
 check "empty list" "" aaa '[]'
 check "two pages" v0.3.0 fff '[{"name":"v0.2.9","commit":{"sha":"fff"}}][{"name":"v0.3.0","commit":{"sha":"fff"}}]'
+check "pinned by release tag" v0.1.2 v0.1.2 "$tags"
+check "pinned by moving tag" v0.1.10 v1 "$tags"
+check "pinned by branch" "" main "$tags"
+check "moving tag on another page" v0.3.0 v1 '[{"name":"v0.3.0","commit":{"sha":"fff"}}][{"name":"v1","commit":{"sha":"fff"}}]'
 
 echo "$failed failed"
 [[ "$failed" == 0 ]]
