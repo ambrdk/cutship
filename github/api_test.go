@@ -35,6 +35,38 @@ func TestAPIPaginates(t *testing.T) {
 	}
 }
 
+func TestViewer(t *testing.T) {
+	for name, tc := range map[string]struct {
+		code  int
+		body  string
+		login string
+		err   error
+	}{
+		"personal token":  {200, `{"login":"ambrdk-deployer"}`, "ambrdk-deployer", nil},
+		"actions token":   {403, `{"message":"Resource not accessible by integration"}`, ActionsBot, nil},
+		"rate limited":    {403, `{"message":"API rate limit exceeded"}`, "", ErrForbidden},
+		"bad credentials": {401, `{"message":"Bad credentials"}`, "", nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.code)
+				_, _ = fmt.Fprint(w, tc.body)
+			}))
+			defer srv.Close()
+			u, err := New(srv.URL, "tok").Viewer(context.Background())
+			if u.Login != tc.login {
+				t.Fatalf("login %q, want %q", u.Login, tc.login)
+			}
+			if tc.login == "" && err == nil {
+				t.Fatal("no error")
+			}
+			if tc.err != nil && !errors.Is(err, tc.err) {
+				t.Fatalf("err %v, want %v", err, tc.err)
+			}
+		})
+	}
+}
+
 func TestRunArtifactUnzips(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

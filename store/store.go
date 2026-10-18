@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -16,7 +17,6 @@ const (
 	marker    = "<!-- deploy-notify:v1 "
 	anyMarker = "<!-- deploy-notify:"
 	markerEnd = " -->"
-	botLogin  = "github-actions[bot]"
 )
 
 type Record struct {
@@ -58,6 +58,7 @@ type PRComment struct {
 	link     func(Record) string
 	mu       sync.Mutex
 	comments map[int]int64
+	author   string
 }
 
 func NewPRComment(api *github.API, repo string, link func(Record) string) *PRComment {
@@ -107,13 +108,34 @@ func (p *PRComment) Save(ctx context.Context, pr int, r Record) error {
 	return err
 }
 
+func (p *PRComment) self(ctx context.Context) (string, error) {
+	p.mu.Lock()
+	known := p.author
+	p.mu.Unlock()
+	if known != "" {
+		return known, nil
+	}
+	u, err := p.api.Viewer(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resolve the token author: %w", err)
+	}
+	p.mu.Lock()
+	p.author = u.Login
+	p.mu.Unlock()
+	return u.Login, nil
+}
+
 func (p *PRComment) find(ctx context.Context, pr int) (int64, string, error) {
+	author, err := p.self(ctx)
+	if err != nil {
+		return 0, "", err
+	}
 	comments, err := p.api.IssueComments(ctx, p.repo, pr)
 	if err != nil {
 		return 0, "", err
 	}
 	for _, c := range comments {
-		if c.User.Login == botLogin && strings.Contains(c.Body, anyMarker) {
+		if c.User.Login == author && strings.Contains(c.Body, anyMarker) {
 			return c.ID, c.Body, nil
 		}
 	}
