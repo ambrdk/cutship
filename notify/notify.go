@@ -36,7 +36,7 @@ func handle(ctx context.Context, a source.Anchored, st store.Store, m Messenger)
 			return nil
 		}
 		s, _ := release.Apply(release.State{}, a.Event)
-		_, err := m.Publish(ctx, thread.IDs{}, render.Post(s), render.Comment(s))
+		_, err := m.Publish(ctx, thread.IDs{}, render.Post(s), render.Comment(s, 0))
 		return err
 	}
 	rec, _, err := st.Load(ctx, a.PR)
@@ -47,7 +47,7 @@ func handle(ctx context.Context, a source.Anchored, st store.Store, m Messenger)
 	if !changed {
 		return nil
 	}
-	ids, err := m.Publish(ctx, rec.IDs, render.Post(s), render.Comment(s))
+	ids, err := m.Publish(ctx, rec.IDs, render.Post(s), render.Comment(s, 0))
 	if err != nil {
 		if ids != rec.IDs && ids.PostID != 0 {
 			_ = st.Save(ctx, a.PR, store.Record{State: rec.State, IDs: ids})
