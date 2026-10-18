@@ -13,35 +13,49 @@ import (
 	"github.com/ambrdk/deploy-notify/source"
 	"github.com/ambrdk/deploy-notify/store"
 	"github.com/ambrdk/notifykit/telegram"
+	"github.com/ambrdk/notifykit/telegram/telegramtest"
 	"github.com/ambrdk/notifykit/thread"
+)
+
+const (
+	channel   = "-1001"
+	groupChat = "-1002"
 )
 
 var t0 = time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC)
 
-type call struct {
-	ids     thread.IDs
-	post    string
-	comment string
+type env struct {
+	f   *telegramtest.Fake
+	th  *thread.Thread
+	st  *store.Memory
+	log *slog.Logger
+	buf *strings.Builder
 }
 
-type fakeMessenger struct {
-	calls []call
-	errs  []error
+func newEnv() *env {
+	f := telegramtest.New(channel, -1002)
+	buf := &strings.Builder{}
+	return &env{
+		f:   f,
+		th:  thread.New(f, channel, thread.Waiting(f, 0), thread.WithMaxWait(10*time.Millisecond)),
+		st:  store.NewMemory(),
+		log: slog.New(slog.NewTextHandler(buf, nil)),
+		buf: buf,
+	}
 }
 
-func (f *fakeMessenger) Publish(_ context.Context, ids thread.IDs, post, comment string) (thread.IDs, error) {
-	f.calls = append(f.calls, call{ids: ids, post: post, comment: comment})
-	if len(f.errs) > 0 {
-		err := f.errs[0]
-		f.errs = f.errs[1:]
-		if err != nil {
-			return ids, err
+func (e *env) handle(events ...source.Anchored) error {
+	return Handle(context.Background(), events, e.st, e.th, e.log)
+}
+
+func (e *env) comments() []telegramtest.Sent {
+	var out []telegramtest.Sent
+	for _, m := range e.f.Messages(groupChat) {
+		if !m.Forwarded {
+			out = append(out, m)
 		}
 	}
-	if ids.PostID == 0 {
-		ids = thread.IDs{PostID: 101, CopyID: 501, CommentID: 102}
-	}
-	return ids, nil
+	return out
 }
 
 func anchored(pr int, kind event.Kind, id string, minute int) source.Anchored {
@@ -49,135 +63,149 @@ func anchored(pr int, kind event.Kind, id string, minute int) source.Anchored {
 }
 
 func TestHandleCreatesThenEdits(t *testing.T) {
-	st, m := store.NewMemory(), &fakeMessenger{}
-	ctx := context.Background()
-	if err := Handle(ctx, []source.Anchored{anchored(12, event.ReleaseOpened, "a", 0)}, st, m); err != nil {
+	e := newEnv()
+	if err := e.handle(anchored(12, event.ReleaseOpened, "a", 0)); err != nil {
 		t.Fatal(err)
 	}
-	if err := Handle(ctx, []source.Anchored{anchored(12, event.Merged, "b", 5)}, st, m); err != nil {
+	first, _, _ := e.st.Load(context.Background(), 12)
+	if err := e.handle(anchored(12, event.Merged, "b", 5)); err != nil {
 		t.Fatal(err)
 	}
-	if len(m.calls) != 2 || m.calls[0].ids != (thread.IDs{}) || m.calls[1].ids != (thread.IDs{PostID: 101, CopyID: 501, CommentID: 102}) {
-		t.Fatalf("calls %+v", m.calls)
+	posts := e.f.Messages(channel)
+	if len(posts) != 1 || !strings.HasPrefix(posts[0].Text, "🔀 <b>Merged: alert-relay v0.2.3</b>") {
+		t.Fatalf("posts %+v", posts)
 	}
-	if !strings.HasPrefix(m.calls[1].post, "🔀 <b>Merged: alert-relay v0.2.3</b>") {
-		t.Fatalf("post %q", m.calls[1].post)
+	rec, ok, _ := e.st.Load(context.Background(), 12)
+	if !ok || rec.State.Stage != release.Merged || rec.IDs != first.IDs || rec.IDs.CommentID == 0 {
+		t.Fatalf("record %+v first %+v", rec, first.IDs)
 	}
-	rec, ok, _ := st.Load(ctx, 12)
-	if !ok || rec.State.Stage != release.Merged || rec.IDs.PostID != 101 {
-		t.Fatalf("record %+v", rec)
+	if c := e.comments(); len(c) != 1 || c[0].ReplyTo != rec.IDs.CopyID {
+		t.Fatalf("comments %+v", c)
 	}
 }
 
 func TestHandleSequentialEventsKeepBoth(t *testing.T) {
-	st, m := store.NewMemory(), &fakeMessenger{}
-	ctx := context.Background()
-	_ = Handle(ctx, []source.Anchored{anchored(12, event.Merged, "merged", 5)}, st, m)
-	_ = Handle(ctx, []source.Anchored{anchored(12, event.DeployStarted, "start", 5)}, st, m)
-	rec, _, _ := st.Load(ctx, 12)
+	e := newEnv()
+	_ = e.handle(anchored(12, event.Merged, "merged", 5))
+	_ = e.handle(anchored(12, event.DeployStarted, "start", 5))
+	rec, _, _ := e.st.Load(context.Background(), 12)
 	var tags []string
 	for _, l := range rec.State.Timeline {
 		tags = append(tags, l.Tag)
 	}
-	if strings.Join(tags, ",") != "MERGED,DEPLOY" || !strings.Contains(m.calls[1].comment, "[MERGED]") || !strings.Contains(m.calls[1].comment, "[DEPLOY]") {
-		t.Fatalf("tags %v comment %q", tags, m.calls[1].comment)
+	c := e.comments()
+	if strings.Join(tags, ",") != "MERGED,DEPLOY" || len(c) != 1 || !strings.Contains(c[0].Text, "[MERGED]") || !strings.Contains(c[0].Text, "[DEPLOY]") {
+		t.Fatalf("tags %v comments %+v", tags, c)
 	}
 }
 
 func TestHandleDuplicateIsNoop(t *testing.T) {
-	st, m := store.NewMemory(), &fakeMessenger{}
-	e := anchored(12, event.ReleaseOpened, "a", 0)
-	_ = Handle(context.Background(), []source.Anchored{e}, st, m)
-	_ = Handle(context.Background(), []source.Anchored{e}, st, m)
-	if len(m.calls) != 1 {
-		t.Fatalf("calls %d", len(m.calls))
+	e := newEnv()
+	ev := anchored(12, event.ReleaseOpened, "a", 0)
+	_ = e.handle(ev)
+	sends, edits := e.f.Calls("sendMessage"), e.f.Calls("editMessageText")
+	_ = e.handle(ev)
+	if e.f.Calls("sendMessage") != sends || e.f.Calls("editMessageText") != edits {
+		t.Fatalf("duplicate published: sends %d→%d edits %d→%d", sends, e.f.Calls("sendMessage"), edits, e.f.Calls("editMessageText"))
+	}
+}
+
+func TestHandleDuplicateRetriesMissingComment(t *testing.T) {
+	e := newEnv()
+	e.f.HoldCopies(true)
+	ev := anchored(12, event.ReleaseOpened, "a", 0)
+	if err := e.handle(ev); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _, _ := e.st.Load(context.Background(), 12); rec.IDs.CommentID != 0 || !rec.IDs.CopyWaited {
+		t.Fatalf("record %+v", rec.IDs)
+	}
+	if err := e.handle(ev); err != nil {
+		t.Fatal(err)
+	}
+	rec, _, _ := e.st.Load(context.Background(), 12)
+	c := e.comments()
+	if len(c) != 1 || c[0].ReplyTo != 0 || rec.IDs.CommentID != c[0].ID {
+		t.Fatalf("comments %+v record %+v", c, rec.IDs)
 	}
 }
 
 func TestHandleUnanchored(t *testing.T) {
-	st, m := store.NewMemory(), &fakeMessenger{}
+	e := newEnv()
 	finished := anchored(0, event.DeployFinished, "deploy:1:1:alert-relay", 7)
 	started := anchored(0, event.DeployStarted, "deploy:1:1:start", 6)
-	if err := Handle(context.Background(), []source.Anchored{started, finished}, st, m); err != nil {
+	if err := e.handle(started, finished); err != nil {
 		t.Fatal(err)
 	}
-	if len(m.calls) != 1 || m.calls[0].ids != (thread.IDs{}) || !strings.HasPrefix(m.calls[0].post, "✅") {
-		t.Fatalf("calls %+v", m.calls)
+	if posts := e.f.Messages(channel); len(posts) != 1 || !strings.HasPrefix(posts[0].Text, "✅") {
+		t.Fatalf("posts %+v", posts)
 	}
-	if _, ok, _ := st.Load(context.Background(), 0); ok {
+	if _, ok, _ := e.st.Load(context.Background(), 0); ok {
 		t.Fatal("unanchored post saved state")
 	}
 }
 
 func TestHandleKeepsStateOnPublishError(t *testing.T) {
-	st, m := store.NewMemory(), &fakeMessenger{errs: []error{errors.New("telegram down")}}
-	e := anchored(12, event.ReleaseOpened, "a", 0)
-	if err := Handle(context.Background(), []source.Anchored{e}, st, m); err == nil {
+	e := newEnv()
+	e.f.FailChat(channel, 1, errors.New("telegram down"))
+	ev := anchored(12, event.ReleaseOpened, "a", 0)
+	if err := e.handle(ev); err == nil {
 		t.Fatal("expected error")
 	}
-	if _, ok, _ := st.Load(context.Background(), 12); ok {
+	if _, ok, _ := e.st.Load(context.Background(), 12); ok {
 		t.Fatal("state saved after a failed publish")
 	}
-	if err := Handle(context.Background(), []source.Anchored{e}, st, m); err != nil || len(m.calls) != 2 {
-		t.Fatalf("retry err %v calls %d", err, len(m.calls))
+	if err := e.handle(ev); err != nil || len(e.f.Messages(channel)) != 1 {
+		t.Fatalf("retry err %v posts %d", err, len(e.f.Messages(channel)))
 	}
-}
-
-type partialMessenger struct{ calls []thread.IDs }
-
-func (p *partialMessenger) Publish(_ context.Context, ids thread.IDs, _, _ string) (thread.IDs, error) {
-	p.calls = append(p.calls, ids)
-	if len(p.calls) == 1 {
-		return thread.IDs{PostID: 101}, errors.New("comment failed")
-	}
-	return thread.IDs{PostID: 101, CopyID: 501, CommentID: 102}, nil
 }
 
 func TestHandleSavesIDsOnPartialFailure(t *testing.T) {
-	st, m := store.NewMemory(), &partialMessenger{}
-	e := anchored(12, event.ReleaseOpened, "a", 0)
-	if err := Handle(context.Background(), []source.Anchored{e}, st, m); err == nil {
-		t.Fatal("expected error")
+	e := newEnv()
+	e.f.FailChat(groupChat, 1, &telegram.RateLimitedError{RetryAfter: time.Minute})
+	ev := anchored(12, event.ReleaseOpened, "a", 0)
+	var limited *telegram.RateLimitedError
+	if err := e.handle(ev); !errors.As(err, &limited) {
+		t.Fatalf("err %v", err)
 	}
-	if err := Handle(context.Background(), []source.Anchored{e}, st, m); err != nil {
+	if rec, _, _ := e.st.Load(context.Background(), 12); rec.IDs.PostID == 0 {
+		t.Fatalf("post id not kept: %+v", rec)
+	}
+	if err := e.handle(ev); err != nil {
 		t.Fatal(err)
 	}
-	if m.calls[1] != (thread.IDs{PostID: 101}) {
-		t.Fatalf("second publish got %+v, a new post would be sent", m.calls[1])
+	if posts := e.f.Messages(channel); len(posts) != 1 || len(e.comments()) != 1 {
+		t.Fatalf("posts %+v comments %+v", posts, e.comments())
 	}
 }
 
-type noCopyMessenger struct{}
-
-func (noCopyMessenger) Publish(_ context.Context, _ thread.IDs, _, _ string) (thread.IDs, error) {
-	return thread.IDs{PostID: 101}, nil
-}
-
-func TestWarnWithoutComment(t *testing.T) {
-	var buf strings.Builder
-	log := slog.New(slog.NewTextHandler(&buf, nil))
-	if _, err := WarnWithoutComment(noCopyMessenger{}, log, true).Publish(context.Background(), thread.IDs{}, "p", "c"); err != nil {
+func TestHandleLogsNoCopy(t *testing.T) {
+	e := newEnv()
+	e.f.HoldCopies(true)
+	if err := e.handle(anchored(12, event.ReleaseOpened, "a", 0)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "level=WARN") || !strings.Contains(buf.String(), "admin of the discussion group") || !strings.Contains(buf.String(), "post_id=101") {
-		t.Fatalf("log %q", buf.String())
-	}
-	buf.Reset()
-	_, _ = WarnWithoutComment(noCopyMessenger{}, log, false).Publish(context.Background(), thread.IDs{}, "p", "c")
-	_, _ = WarnWithoutComment(&fakeMessenger{}, log, true).Publish(context.Background(), thread.IDs{}, "p", "c")
-	if buf.Len() != 0 {
-		t.Fatalf("unexpected log %q", buf.String())
+	out := e.buf.String()
+	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "admin of the discussion group") || !strings.Contains(out, "post_id=1") {
+		t.Fatalf("log %q", out)
 	}
 }
 
-func TestRetryOnRateLimit(t *testing.T) {
-	m := &fakeMessenger{errs: []error{&telegram.RateLimitedError{RetryAfter: 10 * time.Millisecond}, nil}}
-	ids, err := Retry(m, time.Second).Publish(context.Background(), thread.IDs{}, "p", "c")
-	if err != nil || ids.PostID != 101 || len(m.calls) != 2 {
-		t.Fatalf("ids %+v err %v calls %d", ids, err, len(m.calls))
+func TestHandleQuietWhenCommented(t *testing.T) {
+	e := newEnv()
+	if err := e.handle(anchored(12, event.ReleaseOpened, "a", 0)); err != nil {
+		t.Fatal(err)
 	}
-	m = &fakeMessenger{errs: []error{&telegram.RateLimitedError{RetryAfter: time.Minute}}}
-	if _, err := Retry(m, time.Second).Publish(context.Background(), thread.IDs{}, "p", "c"); err == nil || len(m.calls) != 1 {
-		t.Fatalf("long retry err %v calls %d", err, len(m.calls))
+	if e.buf.Len() != 0 {
+		t.Fatalf("log %q", e.buf.String())
+	}
+}
+
+func TestHandleWithoutDiscussion(t *testing.T) {
+	f := telegramtest.New(channel, 0)
+	buf := &strings.Builder{}
+	err := Handle(context.Background(), []source.Anchored{anchored(12, event.ReleaseOpened, "a", 0)}, store.NewMemory(), thread.New(f, channel, thread.Waiting(f, 0)), slog.New(slog.NewTextHandler(buf, nil)))
+	if err != nil || len(f.Messages(channel)) != 1 || !strings.Contains(buf.String(), "no discussion group") {
+		t.Fatalf("err %v posts %d log %q", err, len(f.Messages(channel)), buf.String())
 	}
 }
