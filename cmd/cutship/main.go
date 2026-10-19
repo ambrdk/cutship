@@ -11,6 +11,8 @@ const usage = `usage: cutship <command> [arguments]
 commands:
   validate [--config cutship.yaml]         check cutship.yaml
   schema                                   print the JSON Schema of cutship.yaml
+  version next [--config cutship.yaml] --app <app> [--dir .]
+                                           print the next release tag, nothing when there is none
   notify                                   post release and deploy events to Telegram
   pin read [--root dir] <app>              print the pinned image of an app
   pin check [--root dir] <app> <image> <tag>
@@ -39,6 +41,8 @@ func dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return validateCommand(args[1:], stderr)
 	case "schema":
 		return schemaCommand(args[1:], stdout, stderr)
+	case "version":
+		return versionCommand(args[1:], stdout, stderr)
 	case "notify":
 		if len(args) != 1 {
 			return usageError(stderr)

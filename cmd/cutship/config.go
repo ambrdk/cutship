@@ -23,14 +23,18 @@ func validateCommand(args []string, stderr io.Writer) int {
 	if err != nil || len(rest) != 0 {
 		return usageError(stderr)
 	}
-	_, problems := config.Load(path)
-	for _, p := range problems {
-		reportProblem(stderr, path, p)
-	}
-	if len(problems) > 0 {
+	if _, ok := loadConfig(path, stderr); !ok {
 		return 1
 	}
 	return 0
+}
+
+func loadConfig(path string, stderr io.Writer) (config.Config, bool) {
+	cfg, problems := config.Load(path)
+	for _, p := range problems {
+		reportProblem(stderr, path, p)
+	}
+	return cfg, len(problems) == 0
 }
 
 func reportProblem(stderr io.Writer, file string, p config.Problem) {
