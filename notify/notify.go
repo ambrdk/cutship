@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/ambrdk/cutship/event"
+	"github.com/ambrdk/cutship/notifier/telegram"
 	"github.com/ambrdk/cutship/release"
 	"github.com/ambrdk/cutship/render"
 	"github.com/ambrdk/cutship/source"
@@ -58,7 +59,8 @@ func handle(ctx context.Context, a source.Anchored, st store.Store, m Messenger,
 }
 
 func post(s release.State) thread.Post {
-	return thread.Post{Text: render.Post(s), Comment: func(skip int) string { return render.Comment(s, skip) }}
+	v := render.Build(s)
+	return thread.Post{Text: telegram.Post(v), Comment: func(skip int) string { return telegram.Comment(v, skip) }}
 }
 
 func report(log *slog.Logger, out thread.Outcome) {
