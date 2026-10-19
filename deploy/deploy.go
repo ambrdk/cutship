@@ -177,7 +177,7 @@ func record(ctx context.Context, f forge.Forge, cfg config.Config, run Run, app 
 		return err
 	}
 	e.PR, e.PRURL = ch.Number, ch.URL
-	_, err = state.New(f, run.Repo, cut.Link).Update(ctx, ch.Number, func(r *state.Record) {
+	_, err = state.New(f, run.Repo, cut.Link).Update(ctx, ch, func(r *state.Record) {
 		if r.App == "" {
 			r.App = app
 		}

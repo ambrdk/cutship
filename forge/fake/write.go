@@ -55,7 +55,55 @@ func sameTree(a, b map[string][]byte) bool {
 	return maps.EqualFunc(a, b, func(x, y []byte) bool { return string(x) == string(y) })
 }
 
+type Identity struct {
+	*Forge
+	user string
+}
+
+func (f *Forge) As(user string) *Identity {
+	return &Identity{Forge: f, user: user}
+}
+
+func (i *Identity) Viewer(context.Context) (string, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if err := i.enter("Viewer"); err != nil {
+		return "", err
+	}
+	return i.user, nil
+}
+
+func (i *Identity) CreateComment(_ context.Context, name string, n int, body string) (forge.Comment, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if err := i.enter("CreateComment"); err != nil {
+		return forge.Comment{}, err
+	}
+	return i.addComment(name, n, i.user, body), nil
+}
+
+func (i *Identity) PushChange(_ context.Context, name string, req forge.ChangeRequest) (forge.Change, error) {
+	return i.pushChange(name, req, i.user)
+}
+
+func (f *Forge) BeforePush(fn func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.beforePush = fn
+}
+
 func (f *Forge) PushChange(_ context.Context, name string, req forge.ChangeRequest) (forge.Change, error) {
+	return f.pushChange(name, req, f.User)
+}
+
+func (f *Forge) pushChange(name string, req forge.ChangeRequest, author string) (forge.Change, error) {
+	f.mu.Lock()
+	hook := f.beforePush
+	f.beforePush = nil
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.enter("PushChange"); err != nil {
@@ -84,7 +132,7 @@ func (f *Forge) PushChange(_ context.Context, name string, req forge.ChangeReque
 			return *ch, nil
 		}
 	}
-	ch := &forge.Change{Number: len(r.changes) + 1, Title: req.Title, HeadRef: req.Branch, HeadSHA: head, State: forge.Open}
+	ch := &forge.Change{Number: len(r.changes) + 1, Title: req.Title, HeadRef: req.Branch, HeadSHA: head, State: forge.Open, Author: author}
 	ch.URL = fmt.Sprintf("https://forge.test/%s/pull/%d", name, ch.Number)
 	r.changes = append(r.changes, ch)
 	return *ch, nil

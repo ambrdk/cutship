@@ -33,6 +33,7 @@ type Change struct {
 	State    ChangeState
 	MergedAt *time.Time
 	MergedBy string
+	Author   string
 }
 
 type File struct {

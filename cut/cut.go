@@ -179,7 +179,7 @@ func Release(ctx context.Context, service, deploy forge.Forge, reg registry.Regi
 		PRURL: ch.URL,
 	}
 	env := cfg.Environments[0]
-	if _, err := state.New(deploy, in.DeployRepo, Link).Update(ctx, ch.Number, func(r *state.Record) {
+	if _, err := state.New(deploy, in.DeployRepo, Link).Update(ctx, ch, func(r *state.Record) {
 		r.App, r.Env, r.Tag = app.Name, env, in.Tag
 		r.State, _ = release.Apply(r.State, e)
 	}); err != nil {

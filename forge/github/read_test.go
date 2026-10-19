@@ -268,4 +268,8 @@ func TestViewerActionsToken(t *testing.T) {
 	if _, err := broken.Viewer(ctx); err == nil {
 		t.Fatal("bad credentials accepted")
 	}
+	limited := serve(t, map[string]http.HandlerFunc{"GET /user": status(403, `{"message":"API rate limit exceeded"}`)})
+	if _, err := limited.Viewer(ctx); err == nil {
+		t.Fatal("other 403 taken for the actions bot")
+	}
 }

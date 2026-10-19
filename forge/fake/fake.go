@@ -31,14 +31,15 @@ type repo struct {
 }
 
 type Forge struct {
-	mu      sync.Mutex
-	User    string
-	repos   map[string]*repo
-	commits map[string]*commit
+	mu          sync.Mutex
+	User        string
+	repos       map[string]*repo
+	commits     map[string]*commit
 	fail        map[string][]error
 	deployments []*deploymentRecord
+	beforePush  func()
 	seq         int
-	Calls   []string
+	Calls       []string
 }
 
 func New(user string) *Forge {

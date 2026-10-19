@@ -283,7 +283,7 @@ func (c *Client) Comments(ctx context.Context, full string, n int) ([]forge.Comm
 
 func (c *Client) Viewer(ctx context.Context) (string, error) {
 	u, _, err := c.gh.Users.Get(ctx, "")
-	if statusOf(err) == http.StatusForbidden {
+	if statusOf(err) == http.StatusForbidden && strings.Contains(err.Error(), "Resource not accessible by integration") {
 		return ActionsBot, nil
 	}
 	if err != nil {

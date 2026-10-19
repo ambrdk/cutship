@@ -63,6 +63,7 @@ func change(p *gh.PullRequest) forge.Change {
 		HeadSHA:  p.GetHead().GetSHA(),
 		MergeSHA: p.GetMergeCommitSHA(),
 		MergedBy: p.GetMergedBy().GetLogin(),
+		Author:   p.GetUser().GetLogin(),
 		State:    forge.ChangeState(p.GetState()),
 	}
 	if p.MergedAt != nil {

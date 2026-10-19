@@ -217,7 +217,7 @@ func TestStartFinishWritesLedgerAndState(t *testing.T) {
 		}
 	}
 	st := state.New(r.f, repo, func(state.Record) string { return "" })
-	rec, ok, err := st.Load(ctx, ch.Number)
+	rec, ok, err := st.Load(ctx, ch)
 	if err != nil || !ok || rec.State.Stage != "deploying" {
 		t.Fatalf("%+v %v %v", rec, ok, err)
 	}
@@ -229,15 +229,33 @@ func TestStartFinishWritesLedgerAndState(t *testing.T) {
 	if got, _, _ := ledger.Latest(ctx, r.f, repo, "prod", "cache"); got.State != forge.DeploySuccess {
 		t.Fatalf("%+v", got)
 	}
-	rec, _, _ = st.Load(ctx, ch.Number)
+	rec, _, _ = st.Load(ctx, ch)
 	if rec.State.Stage != "deployed" || len(rec.State.Hosts) != 1 || len(r.f.CommentsOf(repo, ch.Number)) != 1 {
 		t.Fatalf("%+v", rec.State)
 	}
 	if err := Finish(ctx, r.f, r.f, r.cfg, run, apps, true, &rep); err != nil {
 		t.Fatal(err)
 	}
-	if again, _, _ := st.Load(ctx, ch.Number); len(again.State.Timeline) != len(rec.State.Timeline) {
+	if again, _, _ := st.Load(ctx, ch); len(again.State.Timeline) != len(rec.State.Timeline) {
 		t.Fatalf("repeated finish changed the timeline: %d vs %d", len(again.State.Timeline), len(rec.State.Timeline))
+	}
+}
+
+func TestStartWithActionsTokenKeepsOneState(t *testing.T) {
+	r := setup(t)
+	ch, head := r.mergeBump(t, "v0.3.1")
+	st := state.New(r.f, repo, func(state.Record) string { return "" })
+	if _, err := st.Update(ctx, ch, func(rec *state.Record) { rec.App, rec.Tag = "alert-relay", "v0.3.1" }); err != nil {
+		t.Fatal(err)
+	}
+	actions := r.f.As("github-actions[bot]")
+	run := Run{Repo: repo, Env: "prod", SHA: head, ID: "79-1", Now: t0}
+	if err := Start(ctx, actions, actions, r.cfg, run, []string{"alert-relay"}); err != nil {
+		t.Fatal(err)
+	}
+	comments := r.f.CommentsOf(repo, ch.Number)
+	if len(comments) != 1 || !strings.Contains(comments[0].Body, `"stage":"deploying"`) {
+		t.Fatalf("comments %+v", comments)
 	}
 }
 

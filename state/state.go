@@ -101,11 +101,12 @@ func parse(change int, body string) (Record, bool) {
 	return Record{}, false
 }
 
-func (s *Store) find(ctx context.Context, change int) (int64, Record, bool, error) {
-	author, err := s.self(ctx)
+func (s *Store) find(ctx context.Context, ch forge.Change) (int64, Record, bool, error) {
+	self, err := s.self(ctx)
 	if err != nil {
 		return 0, Record{}, false, err
 	}
+	change := ch.Number
 	comments, err := s.f.Comments(ctx, s.repo, change)
 	if err != nil {
 		return 0, Record{}, false, err
@@ -113,7 +114,7 @@ func (s *Store) find(ctx context.Context, change int) (int64, Record, bool, erro
 	var fallback *forge.Comment
 	for i := range comments {
 		c := &comments[i]
-		if c.Author != author {
+		if c.Author != self && (ch.Author == "" || c.Author != ch.Author) {
 			continue
 		}
 		if strings.Contains(c.Body, anyMarker) {
@@ -131,13 +132,14 @@ func (s *Store) find(ctx context.Context, change int) (int64, Record, bool, erro
 	return 0, Record{}, false, nil
 }
 
-func (s *Store) Load(ctx context.Context, change int) (Record, bool, error) {
-	_, r, ok, err := s.find(ctx, change)
+func (s *Store) Load(ctx context.Context, ch forge.Change) (Record, bool, error) {
+	_, r, ok, err := s.find(ctx, ch)
 	return r, ok, err
 }
 
-func (s *Store) Update(ctx context.Context, change int, apply func(*Record)) (Record, error) {
-	id, r, _, err := s.find(ctx, change)
+func (s *Store) Update(ctx context.Context, ch forge.Change, apply func(*Record)) (Record, error) {
+	change := ch.Number
+	id, r, _, err := s.find(ctx, ch)
 	if err != nil {
 		return Record{}, err
 	}
