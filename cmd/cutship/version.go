@@ -37,6 +37,9 @@ func versionCommand(args []string, stdout, stderr io.Writer) int {
 		if token == "" {
 			token = os.Getenv("GITHUB_TOKEN")
 		}
+		if token == "" {
+			return fail(stderr, fmt.Errorf("CUTSHIP_DEPLOY_TOKEN or GITHUB_TOKEN is required to read %s from %s", cut.ConfigPath, *deployRepo))
+		}
 		f, err := openForge(config.Config{}, token)
 		if err != nil {
 			return fail(stderr, err)
