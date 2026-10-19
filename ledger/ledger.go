@@ -34,6 +34,22 @@ func first(ctx context.Context, d forge.Deployments, repo, env, app string, matc
 	return Entry{}, false, nil
 }
 
+func History(ctx context.Context, d forge.Deployments, repo, env, app string) (latest, success *Entry, err error) {
+	for dep, err := range d.ListDeployments(ctx, repo, Environment(env, app)) {
+		if err != nil {
+			return nil, nil, err
+		}
+		e := entry(app, dep)
+		if latest == nil {
+			latest = &e
+		}
+		if dep.State == forge.DeploySuccess {
+			return latest, &e, nil
+		}
+	}
+	return latest, nil, nil
+}
+
 func LastSuccess(ctx context.Context, d forge.Deployments, repo, env, app string) (Entry, bool, error) {
 	return first(ctx, d, repo, env, app, func(dep forge.Deployment) bool { return dep.State == forge.DeploySuccess })
 }

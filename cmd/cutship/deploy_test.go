@@ -81,8 +81,8 @@ func TestDeployCLIErrors(t *testing.T) {
 	if code, _, errOut := run(t, "", "deploy", "finish", "--config", cfg, "--apps", `["alert-relay"]`, "--result", "success", "--report", filepath.Join(t.TempDir(), "missing.json")); code != 1 || !strings.Contains(errOut, "missing.json") {
 		t.Errorf("missing report: %d %q", code, errOut)
 	}
-	f.FailNext("ChangedPaths", forge.ErrTooMany)
-	if code, _, errOut := run(t, "", "deploy", "plan", "--config", cfg, "--base", base); code != 1 || !strings.Contains(errOut, "too many") {
+	f.FailNext("Subtrees", forge.ErrNotFound)
+	if code, _, errOut := run(t, "", "deploy", "plan", "--config", cfg, "--base", base); code != 1 || !strings.Contains(errOut, "list apps/") {
 		t.Errorf("forge error: %d %q", code, errOut)
 	}
 }

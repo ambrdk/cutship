@@ -2,7 +2,9 @@ package fake
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"hash"
 	"maps"
 	"slices"
 	"sort"
@@ -294,6 +296,50 @@ func (f *Forge) ChangedPaths(_ context.Context, name, base, head string) ([]stri
 	}
 	sort.Strings(paths)
 	return paths, nil
+}
+
+func (f *Forge) Subtrees(_ context.Context, name, dir, ref string) (map[string]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("Subtrees"); err != nil {
+		return nil, err
+	}
+	r, err := f.known(name)
+	if err != nil {
+		return nil, err
+	}
+	sha, ok := f.resolve(r, ref)
+	if !ok {
+		return nil, fmt.Errorf("ref %s: %w", ref, forge.ErrNotFound)
+	}
+	hashes := map[string]hash.Hash{}
+	files := f.commits[sha].files
+	paths := make([]string, 0, len(files))
+	for p := range files {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		rest, ok := strings.CutPrefix(p, dir+"/")
+		if !ok {
+			continue
+		}
+		child, file, ok := strings.Cut(rest, "/")
+		if !ok {
+			continue
+		}
+		h, ok := hashes[child]
+		if !ok {
+			h = sha256.New()
+			hashes[child] = h
+		}
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", file, files[p])
+	}
+	out := map[string]string{}
+	for child, h := range hashes {
+		out[child] = fmt.Sprintf("%x", h.Sum(nil))
+	}
+	return out, nil
 }
 
 func (f *Forge) OpenChanges(_ context.Context, name, headPrefix string) ([]forge.Change, error) {

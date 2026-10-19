@@ -126,6 +126,46 @@ func TestPlanIgnoresDeletedApp(t *testing.T) {
 	}
 }
 
+func TestPlanRetriesFailedForeignApp(t *testing.T) {
+	r := setup(t)
+	for _, a := range []string{"alert-relay", "other"} {
+		r.deployed(t, a, r.base, true)
+	}
+	r.deployed(t, "cache", r.base, false)
+	_, head := r.mergeBump(t, "v0.3.1")
+	p := r.plan(t, r.base, head)
+	if !slices.Equal(p.Apps, []string{"alert-relay", "cache"}) || p.SkipCI {
+		t.Fatalf("%+v", p)
+	}
+}
+
+func TestPlanDeletedFailedAppDoesNotBlockSkip(t *testing.T) {
+	r := setup(t)
+	for _, a := range []string{"alert-relay", "cache"} {
+		r.deployed(t, a, r.base, true)
+	}
+	r.deployed(t, "other", r.base, false)
+	before := r.commit(map[string][]byte{"apps/other/app.yml": nil})
+	r.deployed(t, "alert-relay", before, true)
+	r.deployed(t, "cache", before, true)
+	_, head := r.mergeBump(t, "v0.3.1")
+	p := r.plan(t, before, head)
+	if !slices.Equal(p.Apps, []string{"alert-relay"}) || !p.SkipCI {
+		t.Fatalf("%+v", p)
+	}
+}
+
+func TestPlanDoesNotCompareFiles(t *testing.T) {
+	r := setup(t)
+	r.deployed(t, "alert-relay", r.base, true)
+	head := r.commit(map[string][]byte{"apps/alert-relay/app.yml": app("v0.3.1")})
+	r.f.FailNext("ChangedPaths", forge.ErrTooMany)
+	r.f.FailNext("ChangedPaths", forge.ErrTooMany)
+	if p := r.plan(t, r.base, head); !slices.Equal(p.Apps, []string{"alert-relay"}) {
+		t.Fatalf("%+v", p)
+	}
+}
+
 func (r *repoState) mergeBump(t *testing.T, tag string) (forge.Change, string) {
 	t.Helper()
 	ch, err := r.f.PushChange(ctx, repo, forge.ChangeRequest{Base: "main", Branch: "bump/alert-relay-" + tag, Title: "bump", Files: map[string][]byte{"apps/alert-relay/app.yml": app(tag)}})

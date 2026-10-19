@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"regexp"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/ambrdk/cutship/bump"
@@ -22,8 +20,6 @@ import (
 	"github.com/ambrdk/cutship/release"
 	"github.com/ambrdk/cutship/state"
 )
-
-var appDir = regexp.MustCompile(`^apps/([a-z0-9][a-z0-9-]*)/`)
 
 type Plan struct {
 	Apps   []string
@@ -48,89 +44,89 @@ func checkEnv(cfg config.Config, env string) error {
 	return nil
 }
 
-func dir(app string) string {
-	return path.Dir(pin.Path(config.App{Name: app})) + "/"
-}
+var appsDir = path.Dir(path.Dir(pin.Path(config.App{Name: "app"})))
 
-type differ struct {
+type trees struct {
 	ctx   context.Context
 	f     forge.Reader
 	repo  string
-	cache map[[2]string][]string
+	cache map[string]map[string]string
 }
 
-func (d *differ) touched(app, from, to string) (bool, error) {
+func (t *trees) at(ref string) (map[string]string, error) {
+	if got, ok := t.cache[ref]; ok {
+		return got, nil
+	}
+	got, err := t.f.Subtrees(t.ctx, t.repo, appsDir, ref)
+	if err != nil {
+		return nil, fmt.Errorf("list %s/ at %s: %w", appsDir, ref, err)
+	}
+	t.cache[ref] = got
+	return got, nil
+}
+
+func (t *trees) differ(app, from, to string) (bool, error) {
 	if from == to {
 		return false, nil
 	}
-	key := [2]string{from, to}
-	paths, ok := d.cache[key]
-	if !ok {
-		var err error
-		if paths, err = d.f.ChangedPaths(d.ctx, d.repo, from, to); err != nil {
-			return false, err
-		}
-		d.cache[key] = paths
+	a, err := t.at(from)
+	if err != nil {
+		return false, err
 	}
-	prefix := dir(app)
-	return slices.ContainsFunc(paths, func(p string) bool { return strings.HasPrefix(p, prefix) }), nil
+	b, err := t.at(to)
+	if err != nil {
+		return false, err
+	}
+	return a[app] != b[app], nil
 }
 
 func MakePlan(ctx context.Context, f forge.Forge, d forge.Deployments, cfg config.Config, repo, env, base, head string) (Plan, error) {
 	if err := checkEnv(cfg, env); err != nil {
 		return Plan{}, err
 	}
-	diff := &differ{ctx: ctx, f: f, repo: repo, cache: map[[2]string][]string{}}
-	pushed, err := f.ChangedPaths(ctx, repo, base, head)
+	t := &trees{ctx: ctx, f: f, repo: repo, cache: map[string]map[string]string{}}
+	atHead, err := t.at(head)
 	if err != nil {
 		return Plan{}, err
 	}
-	diff.cache[[2]string{base, head}] = pushed
-	names := map[string]bool{}
-	for _, a := range cfg.Apps {
-		names[a.Name] = true
-	}
-	for _, p := range pushed {
-		if m := appDir.FindStringSubmatch(p); m != nil {
-			names[m[1]] = true
+	names := make([]string, 0, len(atHead))
+	for name := range atHead {
+		if pin.ValidApp(name) {
+			names = append(names, name)
 		}
 	}
+	sort.Strings(names)
 	var plan Plan
 	pending := []string{}
-	for _, name := range sortedKeys(names) {
+	for _, name := range names {
+		if _, err := f.FileAt(ctx, repo, pin.Path(config.App{Name: name}), head); errors.Is(err, forge.ErrNotFound) {
+			continue
+		} else if err != nil {
+			return Plan{}, err
+		}
+		latest, success, err := ledger.History(ctx, d, repo, env, name)
+		if err != nil {
+			return Plan{}, err
+		}
 		from := base
-		last, ok, err := ledger.LastSuccess(ctx, d, repo, env, name)
+		if success != nil {
+			from = success.SHA
+		}
+		failed := latest != nil && latest.State == forge.DeployFailure
+		changed, err := t.differ(name, from, head)
 		if err != nil {
 			return Plan{}, err
 		}
-		if ok {
-			from = last.SHA
-		}
-		latest, _, err := ledger.Latest(ctx, d, repo, env, name)
-		if err != nil {
-			return Plan{}, err
-		}
-		failed := latest.State == forge.DeployFailure
-		changed, err := diff.touched(name, from, head)
-		if err != nil {
-			return Plan{}, err
-		}
-		before, err := diff.touched(name, from, base)
+		before, err := t.differ(name, from, base)
 		if err != nil {
 			return Plan{}, err
 		}
 		if failed || before {
 			pending = append(pending, name)
 		}
-		if !changed && !failed {
-			continue
+		if changed || failed {
+			plan.Apps = append(plan.Apps, name)
 		}
-		if _, err := f.FileAt(ctx, repo, pin.Path(config.App{Name: name}), head); errors.Is(err, forge.ErrNotFound) {
-			continue
-		} else if err != nil {
-			return Plan{}, err
-		}
-		plan.Apps = append(plan.Apps, name)
 	}
 	changes, err := f.ChangesForCommit(ctx, repo, head)
 	if err != nil {
@@ -147,15 +143,6 @@ func MakePlan(ctx context.Context, f forge.Forge, d forge.Deployments, cfg confi
 	}
 	plan.SkipCI = gate.Skip(cfg.Release, cfg.Lanes, changes, checks, pending)
 	return plan, nil
-}
-
-func sortedKeys(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func bumpOf(ctx context.Context, f forge.Reader, cfg config.Config, repo, sha, app string) (forge.Change, bool, error) {

@@ -43,6 +43,13 @@ func TestLedgerLastSuccessSkipsFailures(t *testing.T) {
 	if err != nil || !ok || latest.SHA != "s3" || latest.State != forge.DeployInProgress {
 		t.Fatalf("%+v %v %v", latest, ok, err)
 	}
+	newest, success, err := History(ctx, f, repo, "prod", "a")
+	if err != nil || newest == nil || newest.SHA != "s3" || success == nil || success.SHA != "s1" {
+		t.Fatalf("history %+v %+v %v", newest, success, err)
+	}
+	if newest, success, err := History(ctx, f, repo, "prod", "none"); err != nil || newest != nil || success != nil {
+		t.Fatalf("empty history %+v %+v %v", newest, success, err)
+	}
 }
 
 func TestLedgerStartIdempotent(t *testing.T) {

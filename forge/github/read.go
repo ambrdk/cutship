@@ -78,13 +78,15 @@ func (c *Client) ChangedPaths(ctx context.Context, full, base, head string) ([]s
 		return nil, err
 	}
 	seen := map[string]bool{}
+	listed := 0
 	opts := &gh.ListOptions{PerPage: perPage}
 	for {
 		cmp, resp, err := c.gh.Repositories.CompareCommits(ctx, owner, name, base, head, opts)
 		if err != nil {
 			return nil, wrap(err)
 		}
-		if len(cmp.Files) >= compareLimit {
+		listed += len(cmp.Files)
+		if listed >= compareLimit {
 			return nil, fmt.Errorf("%s..%s in %s: %w, the compare API lists at most %d", base, head, full, forge.ErrTooMany, compareLimit)
 		}
 		for _, f := range cmp.Files {
@@ -104,6 +106,27 @@ func (c *Client) ChangedPaths(ctx context.Context, full, base, head string) ([]s
 	}
 	sort.Strings(paths)
 	return paths, nil
+}
+
+func (c *Client) Subtrees(ctx context.Context, full, dir, ref string) (map[string]string, error) {
+	owner, name, err := repo(full)
+	if err != nil {
+		return nil, err
+	}
+	_, entries, _, err := c.gh.Repositories.GetContents(ctx, owner, name, dir, &gh.RepositoryContentGetOptions{Ref: ref})
+	if statusOf(err) == http.StatusNotFound {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, e := range entries {
+		if e.GetType() == "dir" {
+			out[e.GetName()] = e.GetSHA()
+		}
+	}
+	return out, nil
 }
 
 func (c *Client) pulls(ctx context.Context, full string, opts *gh.PullRequestListOptions) ([]forge.Change, error) {

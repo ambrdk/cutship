@@ -67,6 +67,7 @@ type Reader interface {
 	FileAt(ctx context.Context, repo, path, ref string) ([]byte, error)
 	ResolveRef(ctx context.Context, repo, ref string) (string, error)
 	ChangedPaths(ctx context.Context, repo, base, head string) ([]string, error)
+	Subtrees(ctx context.Context, repo, dir, ref string) (map[string]string, error)
 	OpenChanges(ctx context.Context, repo, headPrefix string) ([]Change, error)
 	ChangeByHead(ctx context.Context, repo, head string) (Change, bool, error)
 	ChangesForCommit(ctx context.Context, repo, sha string) ([]Change, error)

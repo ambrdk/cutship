@@ -232,6 +232,39 @@ func TestChangedPathsRenameHasBothPaths(t *testing.T) {
 	}
 }
 
+func TestSubtrees(t *testing.T) {
+	c := serve(t, map[string]http.HandlerFunc{
+		"GET /repos/o/r/contents/apps": func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("ref") != "s1" {
+				t.Errorf("ref %q", r.URL.Query().Get("ref"))
+			}
+			reply(`[{"type":"dir","name":"a","sha":"ta"},{"type":"file","name":"README.md","sha":"f"},{"type":"dir","name":"b","sha":"tb"}]`)(w, r)
+		},
+	})
+	got, err := c.Subtrees(ctx, "o/r", "apps", "s1")
+	if err != nil || len(got) != 2 || got["a"] != "ta" || got["b"] != "tb" {
+		t.Fatalf("%v %v", got, err)
+	}
+	missing := serve(t, map[string]http.HandlerFunc{"GET /repos/o/r/contents/apps": status(404, `{"message":"Not Found"}`)})
+	if got, err := missing.Subtrees(ctx, "o/r", "apps", "s1"); err != nil || len(got) != 0 {
+		t.Fatalf("%v %v", got, err)
+	}
+}
+
+func TestChangedPathsTooManyAcrossPages(t *testing.T) {
+	page := func(from int) string {
+		files := make([]string, 200)
+		for i := range files {
+			files[i] = fmt.Sprintf(`{"filename":"f%d"}`, from+i)
+		}
+		return `{"files":[` + strings.Join(files, ",") + `]}`
+	}
+	c := serve(t, map[string]http.HandlerFunc{"GET /repos/o/r/compare/b...h": paged(page(0), page(200))})
+	if _, err := c.ChangedPaths(ctx, "o/r", "b", "h"); !errors.Is(err, forge.ErrTooMany) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestChangedPathsTooMany(t *testing.T) {
 	files := make([]string, 300)
 	for i := range files {
