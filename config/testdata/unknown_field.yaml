@@ -1,0 +1,9 @@
+version: 1
+forge:
+  type: github
+deploy_repo: ambrdk/ansible
+environment: [prod]
+apps:
+  - name: alert-relay
+    image: ghcr.io/ambrdk/alert-relay
+    pin: { preset: ansible, flie: app.yml }

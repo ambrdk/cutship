@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ambrdk/deploy-notify/event"
+	"github.com/ambrdk/cutship/event"
 )
 
 const keepLast = 30

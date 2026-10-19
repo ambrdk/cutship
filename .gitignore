@@ -1,2 +1,4 @@
 *.tmp
-/deploy-notify
+/cutship
+/build/
+/dist/

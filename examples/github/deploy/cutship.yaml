@@ -1,0 +1,15 @@
+version: 1
+forge:
+  type: github
+deploy_repo: acme/deploy
+apps:
+  - name: api
+    image: ghcr.io/acme/api
+    pin: { preset: ansible }
+release:
+  bump_branch_prefix: bump/
+lanes:
+  required_check: lint
+notify:
+  - type: telegram
+    chat_id: "-1001234567890"

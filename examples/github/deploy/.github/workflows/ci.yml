@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  lane:
+    runs-on: ubuntu-24.04
+    outputs:
+      lane: ${{ steps.lane.outputs.lane }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: cutship.yaml
+          sparse-checkout-cone-mode: false
+      - uses: ambrdk/cutship@v0.3.0
+      - id: lane
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.number }}
+        run: |
+          lane="$(cutship lane --pr "$PR")"
+          echo "lane=$lane" >> "$GITHUB_OUTPUT"
+
+  fast:
+    needs: lane
+    if: needs.lane.outputs.lane == 'fast'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ambrdk/cutship@v0.3.0
+      - run: cutship pin verify
+
+  full:
+    needs: lane
+    if: needs.lane.outputs.lane != 'fast'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ambrdk/cutship@v0.3.0
+      - run: cutship validate
+      - run: cutship pin verify
+      - run: echo "the full checks of the deploy repository go here, for example ansible-lint and a syntax check"
+
+  lint:
+    needs: [fast, full]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          FAST: ${{ needs.fast.result }}
+          FULL: ${{ needs.full.result }}
+        run: |
+          [[ "$FAST" == success || "$FULL" == success ]] || exit 1
+          [[ "$FAST" != failure && "$FULL" != failure ]]

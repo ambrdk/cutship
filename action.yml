@@ -1,54 +1,31 @@
-name: deploy-notify
-description: Keep one Telegram post per release up to date from pull request and deploy events
+name: cutship
+description: Install a verified cutship release and put it on PATH
 inputs:
-  telegram-token:
-    description: Token of the bot that posts release threads
-    required: true
-  telegram-channel-id:
-    description: Numeric id of the Telegram channel
-    required: true
-  github-token:
-    description: Token that can read the repository, its runs and artifacts, and write pull request comments
+  version:
+    description: Release tag to install, such as v0.3.0; empty means the release this action is pinned to
     required: false
-    default: ${{ github.token }}
+    default: ""
+outputs:
+  version:
+    description: Installed release tag
+    value: ${{ steps.install.outputs.version }}
+  path:
+    description: Directory that holds the cutship binary
+    value: ${{ steps.install.outputs.path }}
 runs:
   using: composite
   steps:
-    - id: release
+    - id: install
       shell: bash
       env:
-        ACTION_REF: ${{ github.action_ref }}
         GH_TOKEN: ${{ github.token }}
-      run: |
-        dir="$RUNNER_TEMP/deploy-notify"
-        mkdir -p "$dir"
-        tag=""
-        if [[ -n "$ACTION_REF" ]] && tags="$(gh api repos/ambrdk/deploy-notify/tags --paginate 2>/dev/null)"; then
-          tag="$(printf '%s' "$tags" | "$GITHUB_ACTION_PATH/scripts/pick_tag.sh" "$ACTION_REF")"
-        fi
-        if [[ -n "$tag" ]] && gh release download "$tag" -R ambrdk/deploy-notify -p deploy-notify_linux_amd64 -D "$dir" --clobber; then
-          chmod +x "$dir/deploy-notify_linux_amd64"
-          echo "binary=$dir/deploy-notify_linux_amd64" >> "$GITHUB_OUTPUT"
-          echo "using released binary $tag"
-        else
-          echo "no released binary for ${ACTION_REF:-this ref}, building from source"
-        fi
-    - if: steps.release.outputs.binary == ''
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-      with:
-        go-version-file: ${{ github.action_path }}/go.mod
-        cache: false
-    - id: build
-      if: steps.release.outputs.binary == ''
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      run: |
-        go build -o "$RUNNER_TEMP/deploy-notify/deploy-notify_linux_amd64" ./cmd/deploy-notify
-        echo "binary=$RUNNER_TEMP/deploy-notify/deploy-notify_linux_amd64" >> "$GITHUB_OUTPUT"
+        REPO: ${{ github.action_repository }}
+        REF: ${{ inputs.version || github.action_ref }}
+      run: '"$GITHUB_ACTION_PATH/scripts/install.sh" "$REPO" "$REF" "$RUNNER_TEMP/cutship" >> "$GITHUB_OUTPUT"'
+
     - shell: bash
       env:
-        BINARY: ${{ steps.release.outputs.binary || steps.build.outputs.binary }}
-        TELEGRAM_BOT_TOKEN: ${{ inputs.telegram-token }}
-        TELEGRAM_CHANNEL_ID: ${{ inputs.telegram-channel-id }}
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-      run: '"$BINARY" handle'
+        DIR: ${{ steps.install.outputs.path }}
+      run: |
+        echo "$DIR" >> "$GITHUB_PATH"
+        "$DIR/cutship" --version

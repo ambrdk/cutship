@@ -1,82 +1,107 @@
-# deploy-notify
+# cutship
 
-Keeps one Telegram post per release in sync with what GitHub does to it. A release is a bump pull request in the deploy repository (`bump/<app>-<tag>`, opened by `ci-templates` image-release). The post in the channel goes from 📦 waiting for merge to 🔀 merged, 🚀 deploying, and then ✅, ❌ or ⚪. Under it, in the channel's discussion group, one comment holds the details and a timeline. Both messages are edited in place, the same way alert-relay handles alerts.
+cutship runs the release cycle of apps that are deployed from a separate deploy repository. One binary picks the next version from conventional commits, checks that the image was built from that commit, tags the service, opens a bump pull request in the deploy repository with auto-merge, picks the CI lane for it, decides which apps to deploy and whether the deploy can skip CI, records every deploy as a GitHub Deployment, and keeps one live Telegram post per release up to date along the way.
 
-It runs as a step in a workflow of the deploy repository and exits. There is no server. Between runs, the state of each release lives in a hidden comment of the bot on the bump pull request: a link to the post followed by `<!-- deploy-notify:v1 {json} -->`. If that comment is deleted or edited past recognition, the next event starts a new post.
+It is for teams that build images in CI, keep image versions in a deploy repository (ansible `app.yml` today; Helm values, kustomize and compose are planned) and deploy from CI without Kubernetes controllers. Everything runs inside your workflows: there is no server and no database.
 
-## Events
-
-| GitHub event | What it does |
-|---|---|
-| `pull_request` opened / reopened on `bump/*` | creates the post or brings a closed one back |
-| `workflow_run` of `ci` completed for a `bump/*` pull request | adds the check result |
-| `pull_request` closed | merged by …, or ⚪ not merged |
-| `workflow_run` of `deploy` requested | 🚀 for the pull request merged by that push |
-| `workflow_run` of `deploy` completed | result per app, hosts from the `deploy-report` artifact |
-
-A deploy started with `workflow_dispatch`, or a push without a pull request, gets its own post when it finishes and is not tracked further. A pushed change that is not a bump (an edited `env.j2`, say) opens a thread on its pull request when the deploy starts.
-
-Repeated events change nothing: every event has an id that includes the run attempt, and seen ids are kept in the state. A re-run after a failure turns ❌ into ✅ and adds `[RETRY]` to the timeline.
-
-## Telegram setup
-
-1. Create a separate bot for this. A bot that already long-polls updates somewhere else (alert-relay) cannot be shared, because Telegram gives updates of one token to one reader at a time.
-2. Make the bot an admin of the channel, allowed to post and edit messages.
-3. Make it an admin of the channel's discussion group too, so it sees the copies of its posts there and can reply to them. Without a discussion group the post goes out without a comment. If a copy has not arrived within 30 seconds, the run logs a warning and the next event of that release looks for it again. If it is still missing, the comment goes to the group as a plain message, not a reply.
-
-## Workflow
-
-In the deploy repository, with repository secrets `TELEGRAM_DEPLOY_BOT_TOKEN` and `TELEGRAM_DEPLOY_CHANNEL_ID`:
-
-```yaml
-name: notify
-
-on:
-  pull_request:
-    types: [opened, reopened, closed]
-  workflow_run:
-    workflows: [ci, deploy]
-    types: [requested, completed]
-
-jobs:
-  update:
-    runs-on: ubuntu-24.04
-    concurrency:
-      group: deploy-notify
-      cancel-in-progress: false
-      queue: max
-    permissions:
-      contents: read
-      pull-requests: write
-      actions: read
-    steps:
-      - uses: ambrdk/deploy-notify@v0.1.0
-        with:
-          telegram-token: ${{ secrets.TELEGRAM_DEPLOY_BOT_TOKEN }}
-          telegram-channel-id: ${{ secrets.TELEGRAM_DEPLOY_CHANNEL_ID }}
+```mermaid
+flowchart LR
+  A[merge in the service] --> B[cutship version next]
+  B --> C[build and push the image]
+  C --> D[cutship release]
+  D --> E[bump pull request<br>auto-merge]
+  E --> F[cutship lane<br>fast or full CI]
+  F --> G[merge]
+  G --> H[cutship deploy plan]
+  H --> I[cutship deploy start]
+  I --> J[your deploy]
+  J --> K[cutship deploy finish]
+  D -. post .-> T((Telegram))
+  I -. post .-> T
+  K -. post .-> T
 ```
 
-All runs share one concurrency group with `queue: max`, so events are handled one at a time. That keeps the bot to one `getUpdates` reader and stops two events of the same release from overwriting each other's state.
+## Quick start: GitHub and Telegram
 
-`workflow_run` only fires when the workflow file is on the default branch.
+This takes about ten minutes. The full walk-through with every setting is in [docs/github-telegram.md](docs/github-telegram.md).
 
-Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `deploy-notify_linux_amd64`. The action finds the newest version tag on the commit it was pinned to and runs that binary, which takes a few seconds. This works the same whether you pin a commit SHA, a version tag or `v1`. Pinned to a branch or a commit without a release, it builds from source instead.
+1. Put `cutship.yaml` in the root of the deploy repository:
 
-## Environment
+   ```yaml
+   version: 1
+   forge:
+     type: github
+   deploy_repo: acme/deploy
+   apps:
+     - name: api
+       image: ghcr.io/acme/api
+       pin: { preset: ansible }
+   notify:
+     - type: telegram
+       chat_id: "-1001234567890"
+   ```
 
-The action sets these for `deploy-notify handle`:
+   Each app's version lives in the `image` line of `apps/<app>/app.yml`. All fields are in [docs/config.md](docs/config.md).
 
-| Variable | Meaning |
+2. Create the tokens and secrets from [docs/tokens.md](docs/tokens.md): `CUTSHIP_DEPLOY_TOKEN` in the service repository, `TELEGRAM_BOT_TOKEN` in both repositories.
+
+3. In the deploy repository, turn on "Allow auto-merge" and "Automatically delete head branches", and protect the default branch with the required check `lint`.
+
+4. Copy the workflows from [examples/github](examples/github): `release.yml` into the service, `ci.yml`, `deploy.yml` and `notify.yml` into the deploy repository. Replace `acme`, `api` and the deploy step with yours.
+
+5. Check everything from the deploy repository:
+
+   ```bash
+   CUTSHIP_DEPLOY_TOKEN=... TELEGRAM_BOT_TOKEN=... cutship validate --online
+   ```
+
+6. Merge a `fix:` or `feat:` commit into the service and watch the post appear in the channel.
+
+## Install
+
+In GitHub Actions, `uses: ambrdk/cutship@v0.3.0` or `uses: ambrdk/cutship@<full sha> # v0.3.0` puts that release on `PATH` after checking its checksum. A full SHA is the safer pin; the examples use the version for readability. The Action never builds from source: a commit without a release fails the job. The `version` input installs another release instead.
+
+Elsewhere, download an archive and `checksums.txt` from the [releases](https://github.com/ambrdk/cutship/releases) or run the image `ghcr.io/ambrdk/cutship`. How to verify the cosign signature is in [docs/tokens.md](docs/tokens.md#verifying-a-release).
+
+## Commands
+
+| Command | Where it runs |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | bot token |
-| `TELEGRAM_CHANNEL_ID` | channel id, `-100...` |
-| `GITHUB_TOKEN` | reads the repository, runs and artifacts, writes pull request comments |
-| `TELEGRAM_API_URL` | optional Bot API base URL |
+| `cutship version next` | service CI, before the image build |
+| `cutship release` | service CI, after the image is pushed |
+| `cutship lane` | deploy repository CI on pull requests |
+| `cutship deploy plan`, `start`, `finish` | deploy repository, on push to the default branch |
+| `cutship notify` | deploy repository, optional, on pull request and CI events |
+| `cutship validate`, `cutship schema` | anywhere |
+| `cutship pin`, `bump`, `gate` | low-level helpers |
 
-`GITHUB_REPOSITORY`, `GITHUB_EVENT_NAME`, `GITHUB_EVENT_PATH` and `GITHUB_API_URL` come from Actions.
+Every command, its flags, outputs and exit codes: [docs/commands.md](docs/commands.md). What to do about an error or a warning: [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## Release posts
+
+Each release gets one Telegram post that the commands themselves keep up to date. `cutship release` creates it (📦 waiting for merge), `cutship deploy start` moves it to 🔀 merged and 🚀 deploying, and `cutship deploy finish` ends it with ✅ or ❌ and the hosts from the deploy report. Under the post, in the channel's discussion group, one comment holds the details and a timeline. Both messages are edited in place.
+
+Between runs, the state of each release lives in a hidden comment on the bump pull request (`<!-- cutship:v1 {json} -->`). A deploy that is not a bump keeps its state on the merged pull request it came from, or, for a direct push, in the payload of its GitHub Deployment. Comments of the older `deploy-notify:v1` format are read and rewritten, so posts started before a move keep being edited.
+
+If Telegram fails, the command still does its job and prints a `::warning::` with the reason; the next stage publishes the post with the whole history. Repeated events change nothing: every event has an id, and seen ids are kept in the state.
+
+`release`, `deploy` and `notify` publish with the same bot and are not serialized across repositories. The bot reads `getUpdates` to find the copy of its post in the discussion group, and Telegram allows one reader per token, so two commands publishing at the same moment can miss the copy; the warning says so and the next stage looks for it again. Each command re-reads the state right before it writes and publishes the newest state it can read; two writes to the same state within the same second can still lose one timeline line or show an older stage until the next event.
+
+## Status
+
+cutship is v0.x: the config and the commands may still change, always with an error that says what to do. 1.0 comes after the whole cycle has run on GitHub with Telegram and on GitLab with Slack, and the config schema has gone through one minor release unchanged.
+
+Planned: GitLab (gitlab.com and self-hosted), Slack, Telegram forum topics, several messengers per release, Helm, kustomize and compose pins, environment promotion, Homebrew.
 
 ## Development
 
 ```bash
 go test -race ./...
+bash scripts/pick_tag_test.sh
+bash scripts/install_test.sh
+go run ./internal/docgen > docs/config.md
 ```
+
+## License
+
+Apache-2.0, see `LICENSE` and `NOTICE`.

@@ -1,0 +1,25 @@
+version: 1
+forge:
+  type: github
+  url: https://api.github.com
+deploy_repo: ambrdk/ansible
+environments: [prod]
+apps:
+  - name: alert-relay
+    image: ghcr.io/ambrdk/alert-relay
+    pin: { preset: ansible }
+  - name: api
+    image: registry.example.com:5000/acme/api
+    pin:
+      preset: ansible
+release:
+  versioning: conventional
+  tag_format: v{version}
+  bump_branch_prefix: bump/
+  bump_title: "chore(apps): bump {app} to {tag}"
+lanes:
+  required_check: lint
+notify:
+  - type: telegram
+    mode: channel
+    chat_id: "-100123"
