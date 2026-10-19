@@ -8,6 +8,8 @@ This repository used to be `deploy-notify`; `cutship notify` is that tool.
 
 | Command | What it does |
 |---|---|
+| `cutship validate [--config cutship.yaml]` | checks `cutship.yaml`, prints `::error file=,line=::` per problem |
+| `cutship schema` | prints the JSON Schema of `cutship.yaml` |
 | `cutship notify` | keeps one Telegram post per release in sync with GitHub, see below |
 | `cutship pin read [--root dir] <app>` | prints the image pinned in `apps/<app>/app.yml` |
 | `cutship pin check [--root dir] <app> <image> <tag>` | prints `bump` or `same`, fails when the tag breaks the rule |
