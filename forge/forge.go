@@ -100,6 +100,16 @@ type Forge interface {
 	Writer
 }
 
+type RepoSettings struct {
+	Push                *bool
+	AutoMerge           *bool
+	DeleteBranchOnMerge *bool
+}
+
+type Settings interface {
+	RepoSettings(ctx context.Context, repo string) (RepoSettings, error)
+}
+
 type DeployState string
 
 const (

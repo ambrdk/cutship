@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 
+	"github.com/ambrdk/cutship/check"
 	"github.com/ambrdk/cutship/config"
 )
 
@@ -19,14 +22,44 @@ func configFlags(name string, args []string) (string, []string, error) {
 }
 
 func validateCommand(args []string, stderr io.Writer) int {
-	path, rest, err := configFlags("validate", args)
-	if err != nil || len(rest) != 0 {
+	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	path := fs.String("config", "cutship.yaml", "")
+	online := fs.Bool("online", false, "")
+	if fs.Parse(args) != nil || fs.NArg() != 0 {
 		return usageError(stderr)
 	}
-	if _, ok := loadConfig(path, stderr); !ok {
+	cfg, ok := loadConfig(*path, stderr)
+	if !ok {
 		return 1
 	}
-	return 0
+	if !*online {
+		return 0
+	}
+	local, err := os.ReadFile(*path)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	token := os.Getenv("CUTSHIP_DEPLOY_TOKEN")
+	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
+	}
+	f, err := openForge(cfg, token)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	code := 0
+	for _, finding := range check.Online(context.Background(), f, newRegistry(), cfg, local) {
+		text := finding.Message
+		if finding.Path != "" {
+			text = finding.Path + ": " + text
+		}
+		_, _ = fmt.Fprintf(stderr, "::%s file=%s::%s\n", finding.Level, *path, text)
+		if finding.Level == check.Error {
+			code = 1
+		}
+	}
+	return code
 }
 
 func loadConfig(path string, stderr io.Writer) (config.Config, bool) {

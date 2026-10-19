@@ -12,7 +12,27 @@ import (
 var (
 	_ forge.Forge      = (*Forge)(nil)
 	_ forge.AutoMerger = (*Forge)(nil)
+	_ forge.Settings   = (*Forge)(nil)
 )
+
+func (f *Forge) SetSettings(name string, s forge.RepoSettings) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.repo(name).settings = s
+}
+
+func (f *Forge) RepoSettings(_ context.Context, name string) (forge.RepoSettings, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("RepoSettings"); err != nil {
+		return forge.RepoSettings{}, err
+	}
+	r, err := f.known(name)
+	if err != nil {
+		return forge.RepoSettings{}, err
+	}
+	return r.settings, nil
+}
 
 func (f *Forge) CreateTag(_ context.Context, name, tag, sha string) error {
 	f.mu.Lock()

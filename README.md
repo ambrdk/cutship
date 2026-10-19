@@ -8,7 +8,7 @@ This repository used to be `deploy-notify`; `cutship notify` is that tool.
 
 | Command | What it does |
 |---|---|
-| `cutship validate [--config cutship.yaml]` | checks `cutship.yaml`, prints `::error file=,line=::` per problem |
+| `cutship validate [--config cutship.yaml] [--online]` | checks `cutship.yaml`, prints `::error file=,line=::` per problem; `--online` also reads the deploy repository with `CUTSHIP_DEPLOY_TOKEN` (or `GITHUB_TOKEN`), checks every pin and its image, the token's rights and the auto-merge and branch settings |
 | `cutship schema` | prints the JSON Schema of `cutship.yaml` |
 | `cutship version next [--config cutship.yaml] --app <app> [--dir .]` | prints the next release tag from conventional commits since the last one, nothing when there is no release; needs the full history |
 | `cutship release --app <app> --tag <tag> --deploy-repo <owner/name> [--sha sha]` | after the image is pushed: checks its revision label, tags the service, closes older bumps and opens the bump with auto-merge; prints `outcome=bump\|same\|superseded`, `tag=`, `pr=`, `url=` |

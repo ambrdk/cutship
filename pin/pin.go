@@ -292,6 +292,10 @@ func Verify(root string, cfg config.Config) []error {
 	return errs
 }
 
+func VerifyRef(cfg config.Config, app config.App, ref string) error {
+	return verifyRef(cfg, app, true, ref)
+}
+
 func verifyRef(cfg config.Config, app config.App, configured bool, ref string) error {
 	repo, tag := ParseRef(ref)
 	if configured {

@@ -71,6 +71,18 @@ func TestDefaultBranch(t *testing.T) {
 	}
 }
 
+func TestRepoSettings(t *testing.T) {
+	c := serve(t, map[string]http.HandlerFunc{"GET /repos/o/r": reply(`{"permissions":{"push":true},"allow_auto_merge":false,"delete_branch_on_merge":true}`)})
+	s, err := c.RepoSettings(ctx, "o/r")
+	if err != nil || s.Push == nil || !*s.Push || s.AutoMerge == nil || *s.AutoMerge || s.DeleteBranchOnMerge == nil || !*s.DeleteBranchOnMerge {
+		t.Fatalf("%+v %v", s, err)
+	}
+	bare := serve(t, map[string]http.HandlerFunc{"GET /repos/o/r": reply(`{}`)})
+	if s, err := bare.RepoSettings(ctx, "o/r"); err != nil || s.Push != nil || s.AutoMerge != nil {
+		t.Fatalf("%+v %v", s, err)
+	}
+}
+
 func TestFileAt(t *testing.T) {
 	c := serve(t, map[string]http.HandlerFunc{
 		"GET /repos/o/r/contents/apps/a/app.yml": func(w http.ResponseWriter, r *http.Request) {

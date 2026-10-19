@@ -27,6 +27,7 @@ type repo struct {
 	comments      map[int][]forge.Comment
 	pullsByCommit map[string][]int
 	autoMerge     map[int]bool
+	settings      forge.RepoSettings
 }
 
 type Forge struct {

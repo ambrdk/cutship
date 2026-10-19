@@ -11,7 +11,7 @@ const usage = `usage: cutship <command> [arguments]
 Every command except schema reads cutship.yaml, or the file given with --config.
 
 commands:
-  validate                                 check cutship.yaml
+  validate [--online]                      check cutship.yaml; --online also checks the deploy repository, token and images
   schema                                   print the JSON Schema of cutship.yaml
   version next --app <app> [--dir .]       print the next release tag, nothing when there is none
   release --app <app> --tag <tag> --deploy-repo <owner/name> [--sha sha]

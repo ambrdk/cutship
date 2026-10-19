@@ -28,6 +28,22 @@ func (c *Client) DefaultBranch(ctx context.Context, full string) (string, error)
 	return r.GetDefaultBranch(), nil
 }
 
+func (c *Client) RepoSettings(ctx context.Context, full string) (forge.RepoSettings, error) {
+	owner, name, err := repo(full)
+	if err != nil {
+		return forge.RepoSettings{}, err
+	}
+	r, _, err := c.gh.Repositories.Get(ctx, owner, name)
+	if err != nil {
+		return forge.RepoSettings{}, wrap(err)
+	}
+	s := forge.RepoSettings{AutoMerge: r.AllowAutoMerge, DeleteBranchOnMerge: r.DeleteBranchOnMerge}
+	if r.Permissions != nil {
+		s.Push = r.Permissions.Push
+	}
+	return s, nil
+}
+
 func (c *Client) FileAt(ctx context.Context, full, path, ref string) ([]byte, error) {
 	owner, name, err := repo(full)
 	if err != nil {
