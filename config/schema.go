@@ -78,7 +78,9 @@ func (Forge) JSONSchemaExtend(s *jsonschema.Schema) {
 		"url":  "API base URL for a self-hosted forge. Empty means the public one.",
 	})
 	property(s, "type").Enum = enum("github")
-	property(s, "url").Format = "uri"
+	url := property(s, "url")
+	url.Format = "uri"
+	url.Pattern = `^https?://[^/\s]+`
 }
 
 func (App) JSONSchemaExtend(s *jsonschema.Schema) {
@@ -112,9 +114,35 @@ func (Release) JSONSchemaExtend(s *jsonschema.Schema) {
 		"bump_branch_prefix": "Prefix of bump branches, ending with /. Default cutship/.",
 		"bump_title":         "Title of bump pull requests with {app} and {tag}. Default chore(apps): bump {app} to {tag}.",
 	})
-	property(s, "versioning").Enum = enum("conventional")
-	property(s, "tag_format").Pattern = `^[A-Za-z0-9_.-]*\{version\}[A-Za-z0-9_.-]*$`
-	property(s, "bump_branch_prefix").Pattern = prefixPattern.String()
+	property(s, "versioning").Enum = enum("conventional", "")
+	orEmpty(property(s, "tag_format"), &jsonschema.Schema{
+		Pattern:   `^(?:[A-Za-z0-9_][A-Za-z0-9_.-]*)?\{version\}[A-Za-z0-9_.-]*$`,
+		MaxLength: maxLength(uint64(128 - len("1.2.3") + len(versionPlaceholder))),
+		Not:       matchesAny(`\.\.`, `\.lock$`),
+	})
+	orEmpty(property(s, "bump_branch_prefix"), &jsonschema.Schema{
+		Pattern: prefixPattern.String(),
+		Not:     matchesAny(`\.\.`, `\.lock/`),
+	})
+	orEmpty(property(s, "bump_title"), &jsonschema.Schema{
+		AllOf: []*jsonschema.Schema{{Pattern: `\{app\}`}, {Pattern: `\{tag\}`}},
+	})
+}
+
+func orEmpty(p, constraint *jsonschema.Schema) {
+	p.AnyOf = []*jsonschema.Schema{{MaxLength: zero()}, constraint}
+}
+
+func matchesAny(patterns ...string) *jsonschema.Schema {
+	s := &jsonschema.Schema{}
+	for _, p := range patterns {
+		s.AnyOf = append(s.AnyOf, &jsonschema.Schema{Pattern: p})
+	}
+	return s
+}
+
+func maxLength(n uint64) *uint64 {
+	return &n
 }
 
 func (Lanes) JSONSchemaExtend(s *jsonschema.Schema) {
@@ -132,7 +160,10 @@ func (Notifier) JSONSchemaExtend(s *jsonschema.Schema) {
 		"channel":  "Slack channel id, planned.",
 	})
 	property(s, "type").Enum = enum("telegram")
-	property(s, "mode").Enum = enum("channel")
+	property(s, "mode").Enum = enum("channel", "")
+	chat := property(s, "chat_id")
+	chat.Type = ""
+	chat.AnyOf = []*jsonschema.Schema{{Type: "string", MinLength: one()}, {Type: "integer"}}
 	property(s, "topic_id").Enum = enum(0)
 	property(s, "channel").MaxLength = zero()
 	s.Required = []string{"type", "chat_id"}
