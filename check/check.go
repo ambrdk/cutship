@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/cut"
 	"github.com/ambrdk/cutship/forge"
 	"github.com/ambrdk/cutship/forge/github"
+	"github.com/ambrdk/cutship/notifier/telegram"
 	"github.com/ambrdk/cutship/pin"
 	"github.com/ambrdk/cutship/registry"
 )
@@ -97,5 +99,25 @@ func Online(ctx context.Context, f forge.Forge, reg registry.Registry, cfg confi
 	if _, ok := f.(forge.Deployments); !ok {
 		out.add(Error, "", "this forge has no deployments, cutship deploy needs them for the ledger")
 	}
+	for i, n := range cfg.Notify {
+		path := fmt.Sprintf("notify[%d]", i)
+		if n.Type != "telegram" {
+			continue
+		}
+		token := os.Getenv("TELEGRAM_BOT_TOKEN")
+		if token == "" {
+			out.add(Error, path, "TELEGRAM_BOT_TOKEN is not set, the release posts cannot go out")
+			continue
+		}
+		for _, p := range telegramCheck(ctx, token, os.Getenv("TELEGRAM_API_URL"), n.ChatID) {
+			level := Warning
+			if p.Error {
+				level = Error
+			}
+			out.add(level, path, "%s", p.Message)
+		}
+	}
 	return out
 }
+
+var telegramCheck = telegram.Check

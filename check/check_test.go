@@ -10,6 +10,7 @@ import (
 	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/forge"
 	"github.com/ambrdk/cutship/forge/fake"
+	"github.com/ambrdk/cutship/notifier/telegram"
 	"github.com/ambrdk/cutship/registry"
 )
 
@@ -127,6 +128,28 @@ func TestOnlineRepoUnreadable(t *testing.T) {
 	got := Online(ctx, f, reg, cfg, []byte(cfgY))
 	if len(got) != 1 || got[0].Level != Error || got[0].Path != "deploy_repo" {
 		t.Fatalf("findings:\n%s", levels(got))
+	}
+}
+
+func TestOnlineTelegram(t *testing.T) {
+	f, reg, cfg := world(t)
+	cfg.Notify = []config.Notifier{{Type: "telegram", Mode: "channel", ChatID: "-100123"}}
+	t.Setenv("TELEGRAM_BOT_TOKEN", "")
+	expect(t, Online(ctx, f, reg, cfg, []byte(cfgY)), Error, "notify[0]: TELEGRAM_BOT_TOKEN")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "1:x")
+	t.Setenv("TELEGRAM_API_URL", "http://bot.test")
+	old := telegramCheck
+	t.Cleanup(func() { telegramCheck = old })
+	var gotURL, gotChat string
+	telegramCheck = func(_ context.Context, token, url, chat string) []telegram.Problem {
+		gotURL, gotChat = url, chat
+		return []telegram.Problem{{Error: true, Message: "not an admin"}, {Message: "no discussion group"}}
+	}
+	got := Online(ctx, f, reg, cfg, []byte(cfgY))
+	expect(t, got, Error, "notify[0]: not an admin")
+	expect(t, got, Warning, "notify[0]: no discussion group")
+	if gotURL != "http://bot.test" || gotChat != "-100123" {
+		t.Fatalf("%q %q", gotURL, gotChat)
 	}
 }
 

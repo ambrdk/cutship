@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/ambrdk/notifykit v0.3.0
+	github.com/go-telegram/bot v1.27.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/google/go-github/v92 v92.0.0
 	github.com/invopop/jsonschema v0.14.0
@@ -16,7 +17,6 @@ require (
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/docker/cli v29.7.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
-	github.com/go-telegram/bot v1.27.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
