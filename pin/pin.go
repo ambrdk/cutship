@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ambrdk/cutship/config"
+	"github.com/ambrdk/cutship/forge"
 )
 
 var (
@@ -20,12 +21,6 @@ var (
 	imageLine   = regexp.MustCompile(`^image:[ \t]*(["']?)([^"'\s#]+)(["']?)[ \t]*$`)
 	ansibleFile = regexp.MustCompile(`^apps/([a-z0-9][a-z0-9-]*)/app\.yml$`)
 )
-
-type File struct {
-	Filename string `json:"filename"`
-	Status   string `json:"status"`
-	Patch    string `json:"patch"`
-}
 
 type ruleError string
 
@@ -201,12 +196,12 @@ func Set(root string, app config.App, rel config.Release, tag string) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, "")), info.Mode().Perm())
 }
 
-func ImageOnly(cfg config.Config, files []File) bool {
+func ImageOnly(cfg config.Config, files []forge.File) bool {
 	if len(files) != 1 {
 		return false
 	}
 	f := files[0]
-	m := ansibleFile.FindStringSubmatch(f.Filename)
+	m := ansibleFile.FindStringSubmatch(f.Path)
 	if m == nil || f.Status != "modified" || f.Patch == "" {
 		return false
 	}

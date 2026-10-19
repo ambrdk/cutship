@@ -1,0 +1,96 @@
+package forge
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+)
+
+var (
+	ErrNotFound = errors.New("not found")
+	ErrTooMany  = errors.New("too many changed files")
+)
+
+type ChangeState string
+
+const (
+	Open   ChangeState = "open"
+	Merged ChangeState = "merged"
+	Closed ChangeState = "closed"
+)
+
+type Change struct {
+	Number   int
+	Title    string
+	URL      string
+	HeadRef  string
+	HeadSHA  string
+	MergeSHA string
+	State    ChangeState
+	MergedAt *time.Time
+	MergedBy string
+}
+
+type File struct {
+	Path   string
+	Status string
+	Patch  string
+}
+
+type CheckState string
+
+const (
+	Pending CheckState = "pending"
+	Success CheckState = "success"
+	Failure CheckState = "failure"
+)
+
+type Check struct {
+	Name        string
+	State       CheckState
+	CompletedAt time.Time
+}
+
+type Comment struct {
+	ID     int64
+	Author string
+	Body   string
+}
+
+type Reader interface {
+	DefaultBranch(ctx context.Context, repo string) (string, error)
+	FileAt(ctx context.Context, repo, path, ref string) ([]byte, error)
+	ResolveRef(ctx context.Context, repo, ref string) (string, error)
+	ChangedPaths(ctx context.Context, repo, base, head string) ([]string, error)
+	OpenChanges(ctx context.Context, repo, headPrefix string) ([]Change, error)
+	ChangeByHead(ctx context.Context, repo, head string) (Change, bool, error)
+	ChangesForCommit(ctx context.Context, repo, sha string) ([]Change, error)
+	ChangeFiles(ctx context.Context, repo string, n int) ([]File, error)
+	Checks(ctx context.Context, repo, sha string) ([]Check, error)
+	Comments(ctx context.Context, repo string, n int) ([]Comment, error)
+	Viewer(ctx context.Context) (string, error)
+}
+
+func SplitRepo(repo string) (string, string, error) {
+	owner, name, ok := strings.Cut(repo, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return "", "", fmt.Errorf("repository %q must be owner/name", repo)
+	}
+	return owner, name, nil
+}
+
+func Latest(checks []Check, name string) (Check, bool) {
+	var best Check
+	found := false
+	for _, c := range checks {
+		if c.Name != name {
+			continue
+		}
+		if !found || c.State == Pending || (best.State != Pending && c.CompletedAt.After(best.CompletedAt)) {
+			best, found = c, true
+		}
+	}
+	return best, found
+}

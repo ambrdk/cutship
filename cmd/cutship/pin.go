@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/ambrdk/cutship/config"
+	"github.com/ambrdk/cutship/forge"
 	"github.com/ambrdk/cutship/pin"
 )
 
@@ -78,17 +81,39 @@ func pinCommand(args []string, stdout, stderr io.Writer) int {
 }
 
 func laneCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	path, rest, err := configFlags("lane", args)
-	if err != nil || len(rest) != 0 {
+	fs := flag.NewFlagSet("lane", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	path := fs.String("config", "cutship.yaml", "")
+	pr := fs.Int("pr", 0, "")
+	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "")
+	if fs.Parse(args) != nil || fs.NArg() != 0 || (*pr != 0 && *repo == "") {
 		return usageError(stderr)
 	}
-	cfg, ok := loadConfig(path, stderr)
+	cfg, ok := loadConfig(*path, stderr)
 	if !ok {
 		return 1
 	}
-	var files []pin.File
-	if err := json.NewDecoder(stdin).Decode(&files); err != nil {
-		return fail(stderr, fmt.Errorf("read pull request files: %w", err))
+	var files []forge.File
+	if *pr != 0 {
+		f, err := openForge(cfg, os.Getenv("GITHUB_TOKEN"))
+		if err != nil {
+			return fail(stderr, err)
+		}
+		if files, err = f.ChangeFiles(context.Background(), *repo, *pr); err != nil {
+			return fail(stderr, fmt.Errorf("read files of pull request %d: %w", *pr, err))
+		}
+	} else {
+		var raw []struct {
+			Filename string `json:"filename"`
+			Status   string `json:"status"`
+			Patch    string `json:"patch"`
+		}
+		if err := json.NewDecoder(stdin).Decode(&raw); err != nil {
+			return fail(stderr, fmt.Errorf("read pull request files: %w", err))
+		}
+		for _, r := range raw {
+			files = append(files, forge.File{Path: r.Filename, Status: r.Status, Patch: r.Patch})
+		}
 	}
 	lane := "full"
 	if pin.ImageOnly(cfg, files) {

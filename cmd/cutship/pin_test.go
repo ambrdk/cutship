@@ -2,10 +2,16 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ambrdk/cutship/config"
+	"github.com/ambrdk/cutship/forge"
+	"github.com/ambrdk/cutship/forge/fake"
 )
 
 const own = "ghcr.io/ambrdk/alert-relay"
@@ -105,6 +111,36 @@ func TestLaneCLI(t *testing.T) {
 	}
 	if code, _, _ := run(t, "[]", "lane", "--config", cfg, "extra"); code != 2 {
 		t.Fatalf("extra arg: %d", code)
+	}
+}
+
+func useForge(t *testing.T, f *fake.Forge) {
+	t.Helper()
+	old := openForge
+	openForge = func(config.Config, string) (forge.Reader, error) { return f, nil }
+	t.Cleanup(func() { openForge = old })
+}
+
+func TestLaneCLIFromPR(t *testing.T) {
+	cfg := writeConfig(t, ambrdkConfig)
+	f := fake.New("bot")
+	fast := f.AddChange("ambrdk/ansible", forge.Change{HeadRef: "bump/alert-relay-v0.2.4"}, forge.File{Path: "apps/alert-relay/app.yml", Status: "modified", Patch: "@@ -1 +1 @@\n-image: " + own + ":v0.2.3\n+image: " + own + ":v0.2.4"})
+	full := f.AddChange("ambrdk/ansible", forge.Change{HeadRef: "fix/env"}, forge.File{Path: "apps/alert-relay/env.j2", Status: "modified", Patch: "+X=1"})
+	useForge(t, f)
+	t.Setenv("GITHUB_REPOSITORY", "ambrdk/ansible")
+	if code, out, errOut := run(t, "", "lane", "--config", cfg, "--pr", fmt.Sprint(fast.Number)); code != 0 || out != "fast\n" {
+		t.Fatalf("fast: %d %q %q", code, out, errOut)
+	}
+	if code, out, _ := run(t, "", "lane", "--config", cfg, "--repo", "ambrdk/ansible", "--pr", fmt.Sprint(full.Number)); code != 0 || out != "full\n" {
+		t.Fatalf("full: %d %q", code, out)
+	}
+	f.FailNext("ChangeFiles", errors.New("boom"))
+	if code, _, errOut := run(t, "", "lane", "--config", cfg, "--pr", "1"); code != 1 || !strings.Contains(errOut, "::error::") {
+		t.Fatalf("error: %d %q", code, errOut)
+	}
+	t.Setenv("GITHUB_REPOSITORY", "")
+	if code, _, _ := run(t, "", "lane", "--config", cfg, "--pr", "1"); code != 2 {
+		t.Fatalf("no repo: %d", code)
 	}
 }
 

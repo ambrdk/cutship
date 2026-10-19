@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ambrdk/cutship/config"
+	"github.com/ambrdk/cutship/forge"
 )
 
 const (
@@ -191,41 +192,41 @@ func patch(old, new, extra string) string {
 	return "@@ -1,3 +1,3 @@\n ---\n-image: " + old + "\n+image: " + new + "\n health_url: x" + extra
 }
 
-func appFile(old, new string) File {
-	return File{Filename: "apps/alert-relay/app.yml", Status: "modified", Patch: patch(old, new, "")}
+func appFile(old, new string) forge.File {
+	return forge.File{Path: "apps/alert-relay/app.yml", Status: "modified", Patch: patch(old, new, "")}
 }
 
 func TestImageOnly(t *testing.T) {
-	env := File{Filename: "apps/alert-relay/env.j2", Status: "modified", Patch: "+X=1"}
-	cache := func(old, new string) File {
-		return File{Filename: "apps/cache/app.yml", Status: "modified", Patch: patch(old, new, "")}
+	env := forge.File{Path: "apps/alert-relay/env.j2", Status: "modified", Patch: "+X=1"}
+	cache := func(old, new string) forge.File {
+		return forge.File{Path: "apps/cache/app.yml", Status: "modified", Patch: patch(old, new, "")}
 	}
 	cases := []struct {
 		name  string
-		files []File
+		files []forge.File
 		fast  bool
 	}{
-		{"own bump", []File{appFile(own+":v0.2.3", own+":v0.2.4")}, true},
-		{"quoted", []File{appFile(`"`+own+`:v0.2.3"`, `"`+own+`:v0.2.4"`)}, true},
-		{"other field", []File{{Filename: "apps/alert-relay/app.yml", Status: "modified", Patch: "@@ -2 +2 @@\n-health_url: a\n+health_url: b"}}, false},
-		{"image and field", []File{{Filename: "apps/alert-relay/app.yml", Status: "modified", Patch: patch(own+":v0.2.3", own+":v0.2.4", "\n-volumes: []\n+volumes: [x]")}}, false},
-		{"two files", []File{appFile(own+":v0.2.3", own+":v0.2.4"), env}, false},
-		{"other repo", []File{appFile(own+":v0.2.3", "docker.io/x/alert-relay:v0.2.4")}, false},
-		{"own image of another app", []File{appFile(other+":v0.2.3", other+":v0.2.4")}, false},
-		{"foreign upgrade", []File{cache("valkey/valkey:9.1.1", "valkey/valkey:9.1.2")}, true},
-		{"foreign downgrade", []File{cache("valkey/valkey:9.1.2", "valkey/valkey:9.1.1")}, false},
-		{"foreign suffix upgrade", []File{cache("grafana/grafana:11.3.0-ubuntu", "grafana/grafana:11.4.0-ubuntu")}, true},
-		{"foreign suffix flip", []File{cache("grafana/grafana:11.3.0-ubuntu", "grafana/grafana:11.3.0-alpine")}, false},
-		{"foreign suffix down", []File{cache("grafana/grafana:11.4.0", "grafana/grafana:11.3.0-ubuntu")}, false},
-		{"no number", []File{cache("x/y:stable-a", "x/y:stable-b")}, false},
-		{"number to word", []File{cache("valkey/valkey:9.1.2", "valkey/valkey:alpine")}, false},
-		{"own not in format", []File{appFile(own+":v0.2.3", own+":0.2.4")}, false},
-		{"own prerelease", []File{appFile(own+":v0.2.3", own+":v0.2.4-rc.1")}, false},
-		{"own downgrade", []File{appFile(own+":v0.2.4", own+":v0.2.3")}, false},
-		{"latest", []File{appFile(own+":v0.2.3", own+":latest")}, false},
-		{"added", []File{{Filename: "apps/alert-relay/app.yml", Status: "added", Patch: patch(own+":v0.2.3", own+":v0.2.4", "")}}, false},
-		{"other path", []File{{Filename: "apps/alert-relay/compose.yml", Status: "modified", Patch: patch(own+":v0.2.3", own+":v0.2.4", "")}}, false},
-		{"no patch", []File{{Filename: "apps/alert-relay/app.yml", Status: "modified"}}, false},
+		{"own bump", []forge.File{appFile(own+":v0.2.3", own+":v0.2.4")}, true},
+		{"quoted", []forge.File{appFile(`"`+own+`:v0.2.3"`, `"`+own+`:v0.2.4"`)}, true},
+		{"other field", []forge.File{{Path: "apps/alert-relay/app.yml", Status: "modified", Patch: "@@ -2 +2 @@\n-health_url: a\n+health_url: b"}}, false},
+		{"image and field", []forge.File{{Path: "apps/alert-relay/app.yml", Status: "modified", Patch: patch(own+":v0.2.3", own+":v0.2.4", "\n-volumes: []\n+volumes: [x]")}}, false},
+		{"two files", []forge.File{appFile(own+":v0.2.3", own+":v0.2.4"), env}, false},
+		{"other repo", []forge.File{appFile(own+":v0.2.3", "docker.io/x/alert-relay:v0.2.4")}, false},
+		{"own image of another app", []forge.File{appFile(other+":v0.2.3", other+":v0.2.4")}, false},
+		{"foreign upgrade", []forge.File{cache("valkey/valkey:9.1.1", "valkey/valkey:9.1.2")}, true},
+		{"foreign downgrade", []forge.File{cache("valkey/valkey:9.1.2", "valkey/valkey:9.1.1")}, false},
+		{"foreign suffix upgrade", []forge.File{cache("grafana/grafana:11.3.0-ubuntu", "grafana/grafana:11.4.0-ubuntu")}, true},
+		{"foreign suffix flip", []forge.File{cache("grafana/grafana:11.3.0-ubuntu", "grafana/grafana:11.3.0-alpine")}, false},
+		{"foreign suffix down", []forge.File{cache("grafana/grafana:11.4.0", "grafana/grafana:11.3.0-ubuntu")}, false},
+		{"no number", []forge.File{cache("x/y:stable-a", "x/y:stable-b")}, false},
+		{"number to word", []forge.File{cache("valkey/valkey:9.1.2", "valkey/valkey:alpine")}, false},
+		{"own not in format", []forge.File{appFile(own+":v0.2.3", own+":0.2.4")}, false},
+		{"own prerelease", []forge.File{appFile(own+":v0.2.3", own+":v0.2.4-rc.1")}, false},
+		{"own downgrade", []forge.File{appFile(own+":v0.2.4", own+":v0.2.3")}, false},
+		{"latest", []forge.File{appFile(own+":v0.2.3", own+":latest")}, false},
+		{"added", []forge.File{{Path: "apps/alert-relay/app.yml", Status: "added", Patch: patch(own+":v0.2.3", own+":v0.2.4", "")}}, false},
+		{"other path", []forge.File{{Path: "apps/alert-relay/compose.yml", Status: "modified", Patch: patch(own+":v0.2.3", own+":v0.2.4", "")}}, false},
+		{"no patch", []forge.File{{Path: "apps/alert-relay/app.yml", Status: "modified"}}, false},
 		{"empty", nil, false},
 	}
 	for _, tc := range cases {
@@ -237,10 +238,10 @@ func TestImageOnly(t *testing.T) {
 
 func TestImageOnlyPlainFormat(t *testing.T) {
 	plainCfg := config.Config{Apps: []config.App{relayApp}, Release: plain}
-	if !ImageOnly(plainCfg, []File{appFile(own+":1.2.3", own+":1.2.4")}) {
+	if !ImageOnly(plainCfg, []forge.File{appFile(own+":1.2.3", own+":1.2.4")}) {
 		t.Error("plain bump not fast")
 	}
-	if ImageOnly(plainCfg, []File{appFile(own+":1.2.3", own+":v1.2.4")}) {
+	if ImageOnly(plainCfg, []forge.File{appFile(own+":1.2.3", own+":v1.2.4")}) {
 		t.Error("v tag fast in plain format")
 	}
 }
