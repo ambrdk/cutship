@@ -1,44 +1,31 @@
-name: cutship notify
-description: Add pull request and CI events of bump pull requests to the release post
+name: cutship
+description: Install a verified cutship release and put it on PATH
 inputs:
-  telegram-token:
-    description: Token of the bot that posts release threads; the chat comes from notify in cutship.yaml
-    required: true
-  github-token:
-    description: Token that can read the repository and write pull request comments
+  version:
+    description: Release tag to install, such as v0.3.0; empty means the release this action is pinned to
     required: false
-    default: ${{ github.token }}
+    default: ""
+outputs:
+  version:
+    description: Installed release tag
+    value: ${{ steps.install.outputs.version }}
+  path:
+    description: Directory that holds the cutship binary
+    value: ${{ steps.install.outputs.path }}
 runs:
   using: composite
   steps:
-    - id: release
+    - id: install
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.action_repository }}
-        REF: ${{ github.action_ref }}
+        REF: ${{ inputs.version || github.action_ref }}
       run: '"$GITHUB_ACTION_PATH/scripts/install.sh" "$REPO" "$REF" "$RUNNER_TEMP/cutship" >> "$GITHUB_OUTPUT"'
-
-    - if: steps.release.outputs.binary == ''
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-      with:
-        go-version-file: ${{ github.action_path }}/go.mod
-        cache: false
-
-    - id: build
-      if: steps.release.outputs.binary == ''
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      run: |
-        go build -o "$RUNNER_TEMP/cutship/cutship" ./cmd/cutship
-        echo "binary=$RUNNER_TEMP/cutship/cutship" >> "$GITHUB_OUTPUT"
 
     - shell: bash
       env:
-        BINARY: ${{ steps.release.outputs.binary || steps.build.outputs.binary }}
-        VERSION: ${{ steps.release.outputs.version || 'source' }}
-        TELEGRAM_BOT_TOKEN: ${{ inputs.telegram-token }}
-        GITHUB_TOKEN: ${{ inputs.github-token }}
+        DIR: ${{ steps.install.outputs.path }}
       run: |
-        echo "cutship $VERSION"
-        "$BINARY" notify
+        echo "$DIR" >> "$GITHUB_PATH"
+        "$DIR/cutship" --version
