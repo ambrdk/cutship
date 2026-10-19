@@ -22,4 +22,5 @@ jobs:
           version: v2.13.2
       - run: go test -race ./...
       - run: bash scripts/pick_tag_test.sh
+      - run: bash scripts/install_test.sh
       - run: shellcheck scripts/*.sh

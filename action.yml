@@ -1,4 +1,4 @@
-name: deploy-notify
+name: ship notify
 description: Keep one Telegram post per release up to date from pull request and deploy events
 inputs:
   telegram-token:
@@ -17,38 +17,32 @@ runs:
     - id: release
       shell: bash
       env:
-        ACTION_REF: ${{ github.action_ref }}
         GH_TOKEN: ${{ github.token }}
-      run: |
-        dir="$RUNNER_TEMP/deploy-notify"
-        mkdir -p "$dir"
-        tag=""
-        if [[ -n "$ACTION_REF" ]] && tags="$(gh api repos/ambrdk/deploy-notify/tags --paginate 2>/dev/null)"; then
-          tag="$(printf '%s' "$tags" | "$GITHUB_ACTION_PATH/scripts/pick_tag.sh" "$ACTION_REF")"
-        fi
-        if [[ -n "$tag" ]] && gh release download "$tag" -R ambrdk/deploy-notify -p deploy-notify_linux_amd64 -D "$dir" --clobber; then
-          chmod +x "$dir/deploy-notify_linux_amd64"
-          echo "binary=$dir/deploy-notify_linux_amd64" >> "$GITHUB_OUTPUT"
-          echo "using released binary $tag"
-        else
-          echo "no released binary for ${ACTION_REF:-this ref}, building from source"
-        fi
+        REPO: ${{ github.action_repository }}
+        REF: ${{ github.action_ref }}
+      run: '"$GITHUB_ACTION_PATH/scripts/install.sh" "$REPO" "$REF" "$RUNNER_TEMP/ship" >> "$GITHUB_OUTPUT"'
+
     - if: steps.release.outputs.binary == ''
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version-file: ${{ github.action_path }}/go.mod
         cache: false
+
     - id: build
       if: steps.release.outputs.binary == ''
       shell: bash
       working-directory: ${{ github.action_path }}
       run: |
-        go build -o "$RUNNER_TEMP/deploy-notify/ship" ./cmd/ship
-        echo "binary=$RUNNER_TEMP/deploy-notify/ship" >> "$GITHUB_OUTPUT"
+        go build -o "$RUNNER_TEMP/ship/ship" ./cmd/ship
+        echo "binary=$RUNNER_TEMP/ship/ship" >> "$GITHUB_OUTPUT"
+
     - shell: bash
       env:
         BINARY: ${{ steps.release.outputs.binary || steps.build.outputs.binary }}
+        VERSION: ${{ steps.release.outputs.version || 'source' }}
         TELEGRAM_BOT_TOKEN: ${{ inputs.telegram-token }}
         TELEGRAM_CHANNEL_ID: ${{ inputs.telegram-channel-id }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
-      run: '"$BINARY" notify'
+      run: |
+        echo "ship $VERSION"
+        "$BINARY" notify

@@ -1,0 +1,45 @@
+name: ship setup
+description: Put the ship binary of the pinned ref on PATH, built from source when that ref has no release
+inputs:
+  version:
+    description: Release tag of ship to install; defaults to the ref this action is pinned to
+    required: false
+    default: ""
+outputs:
+  version:
+    description: Installed release tag, or source when ship was built from source
+    value: ${{ steps.done.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - id: release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.action_repository }}
+        REF: ${{ inputs.version || github.action_ref }}
+      run: '"$GITHUB_ACTION_PATH/../scripts/install.sh" "$REPO" "$REF" "$RUNNER_TEMP/ship" >> "$GITHUB_OUTPUT"'
+
+    - if: steps.release.outputs.binary == ''
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ github.action_path }}/../go.mod
+        cache: false
+
+    - id: build
+      if: steps.release.outputs.binary == ''
+      shell: bash
+      working-directory: ${{ github.action_path }}/..
+      run: |
+        go build -o "$RUNNER_TEMP/ship/ship" ./cmd/ship
+        echo "binary=$RUNNER_TEMP/ship/ship" >> "$GITHUB_OUTPUT"
+
+    - id: done
+      shell: bash
+      env:
+        BINARY: ${{ steps.release.outputs.binary || steps.build.outputs.binary }}
+        VERSION: ${{ steps.release.outputs.version || 'source' }}
+      run: |
+        dirname "$BINARY" >> "$GITHUB_PATH"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "ship $VERSION at $BINARY"

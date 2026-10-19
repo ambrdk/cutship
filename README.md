@@ -1,10 +1,45 @@
-# deploy-notify
+# ship
+
+One Go tool for the release cycle of ambrdk services: from a merge in a service to a deployed app and a Telegram post about it. Every rule of that cycle (which tag is allowed, what a bump branch is called, when a pull request can take the fast lane, when a deploy can skip CI) lives in one Go package here, and the workflows in `ci-templates` and `ansible` only call `ship`.
+
+This repository used to be `deploy-notify`; `ship notify` is that tool.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `ship notify` | keeps one Telegram post per release in sync with GitHub, see below |
+| `ship pin read [--root dir] <app>` | prints the image pinned in `apps/<app>/app.yml` |
+| `ship pin check [--root dir] <app> <image> <tag>` | prints `bump` or `same`, fails when the tag breaks the rule |
+| `ship pin set [--root dir] <app> <image> <tag>` | changes only the `image` line, keeps every other byte |
+| `ship pin verify [--root dir]` | checks every app pin against the tag rule |
+| `ship lane < files.json` | prints `fast` or `full` for the files of a pull request |
+| `ship bump name <app> <tag>` | prints `branch=` and `title=` of the bump pull request |
+| `ship bump parse <ref>` | prints `<app> <tag>` when the ref is a bump branch |
+| `ship bump superseded <app> <tag> < branches` | prints the open bump branches of the app with a lower version |
+| `ship gate head --pulls <file>` | prints the head sha of the merged bump pull request |
+| `ship gate skip --pulls <file> --checks <file> --pending <json\|unknown>` | prints `true` when the deploy can skip its CI run |
+
+Output is plain values on stdout, one per line, so a step can write it to `$GITHUB_OUTPUT`. A broken rule prints `::error::<reason>` on stderr and exits 1; wrong arguments exit 2. The commands, their output and the exit codes are a versioned interface: an incompatible change needs a new major version.
+
+The rules are written down in `CONTEXT.md` here and in the deploy repository.
+
+## Using ship in a workflow
+
+```yaml
+- uses: ambrdk/ship/setup@<sha> # vX.Y.Z
+- run: ship pin check alert-relay ghcr.io/ambrdk/alert-relay "$TAG"
+```
+
+`setup` puts the binary on `PATH`. Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `ship_linux_amd64`; setup finds the newest version tag on the commit it is pinned to (a SHA, a version tag or `v1`) and downloads that binary in a few seconds. Pinned to a branch or a commit without a release, it builds from source. The `version` input installs a given release instead of the pinned one, and the `version` output says what was installed.
+
+## ship notify
 
 Keeps one Telegram post per release in sync with what GitHub does to it. A release is a bump pull request in the deploy repository (`bump/<app>-<tag>`, opened by `ci-templates` image-release). The post in the channel goes from 📦 waiting for merge to 🔀 merged, 🚀 deploying, and then ✅, ❌ or ⚪. Under it, in the channel's discussion group, one comment holds the details and a timeline. Both messages are edited in place, the same way alert-relay handles alerts.
 
 It runs as a step in a workflow of the deploy repository and exits. There is no server. Between runs, the state of each release lives in a hidden comment of the bot on the bump pull request: a link to the post followed by `<!-- deploy-notify:v1 {json} -->`. If that comment is deleted or edited past recognition, the next event starts a new post.
 
-## Events
+### Events
 
 | GitHub event | What it does |
 |---|---|
@@ -18,13 +53,13 @@ A deploy started with `workflow_dispatch`, or a push without a pull request, get
 
 Repeated events change nothing: every event has an id that includes the run attempt, and seen ids are kept in the state. A re-run after a failure turns ❌ into ✅ and adds `[RETRY]` to the timeline.
 
-## Telegram setup
+### Telegram setup
 
 1. Create a separate bot for this. A bot that already long-polls updates somewhere else (alert-relay) cannot be shared, because Telegram gives updates of one token to one reader at a time.
 2. Make the bot an admin of the channel, allowed to post and edit messages.
 3. Make it an admin of the channel's discussion group too, so it sees the copies of its posts there and can reply to them. Without a discussion group the post goes out without a comment. If a copy has not arrived within 30 seconds, the run logs a warning and the next event of that release looks for it again. If it is still missing, the comment goes to the group as a plain message, not a reply.
 
-## Workflow
+### Workflow
 
 In the deploy repository, with repository secrets `TELEGRAM_DEPLOY_BOT_TOKEN` and `TELEGRAM_DEPLOY_CHANNEL_ID`:
 
@@ -50,7 +85,7 @@ jobs:
       pull-requests: write
       actions: read
     steps:
-      - uses: ambrdk/deploy-notify@v0.1.0
+      - uses: ambrdk/ship@<sha> # vX.Y.Z
         with:
           telegram-token: ${{ secrets.TELEGRAM_DEPLOY_BOT_TOKEN }}
           telegram-channel-id: ${{ secrets.TELEGRAM_DEPLOY_CHANNEL_ID }}
@@ -60,11 +95,9 @@ All runs share one concurrency group with `queue: max`, so events are handled on
 
 `workflow_run` only fires when the workflow file is on the default branch.
 
-Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `deploy-notify_linux_amd64`. The action finds the newest version tag on the commit it was pinned to and runs that binary, which takes a few seconds. This works the same whether you pin a commit SHA, a version tag or `v1`. Pinned to a branch or a commit without a release, it builds from source instead.
+### Environment
 
-## Environment
-
-The action sets these for `deploy-notify handle`:
+The action sets these for `ship notify`:
 
 | Variable | Meaning |
 |---|---|
@@ -79,4 +112,6 @@ The action sets these for `deploy-notify handle`:
 
 ```bash
 go test -race ./...
+bash scripts/pick_tag_test.sh
+bash scripts/install_test.sh
 ```
