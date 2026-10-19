@@ -1,13 +1,13 @@
-name: ship setup
-description: Put the ship binary of the pinned ref on PATH, built from source when that ref has no release
+name: cutship setup
+description: Put the cutship binary of the pinned ref on PATH, built from source when that ref has no release
 inputs:
   version:
-    description: Release tag of ship to install, failing when it cannot be installed; without it the ref this action is pinned to is used and built from source when it has no release
+    description: Release tag of cutship to install, failing when it cannot be installed; without it the ref this action is pinned to is used and built from source when it has no release
     required: false
     default: ""
 outputs:
   version:
-    description: Installed release tag, or source when ship was built from source
+    description: Installed release tag, or source when cutship was built from source
     value: ${{ steps.done.outputs.version }}
 runs:
   using: composite
@@ -18,8 +18,8 @@ runs:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.action_repository }}
         REF: ${{ inputs.version || github.action_ref }}
-        SHIP_REQUIRED: ${{ inputs.version != '' && '1' || '' }}
-      run: '"$GITHUB_ACTION_PATH/../scripts/install.sh" "$REPO" "$REF" "$RUNNER_TEMP/ship" >> "$GITHUB_OUTPUT"'
+        CUTSHIP_REQUIRED: ${{ inputs.version != '' && '1' || '' }}
+      run: '"$GITHUB_ACTION_PATH/../scripts/install.sh" "$REPO" "$REF" "$RUNNER_TEMP/cutship" >> "$GITHUB_OUTPUT"'
 
     - if: steps.release.outputs.binary == ''
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -32,8 +32,8 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}/..
       run: |
-        go build -o "$RUNNER_TEMP/ship/ship" ./cmd/ship
-        echo "binary=$RUNNER_TEMP/ship/ship" >> "$GITHUB_OUTPUT"
+        go build -o "$RUNNER_TEMP/cutship/cutship" ./cmd/cutship
+        echo "binary=$RUNNER_TEMP/cutship/cutship" >> "$GITHUB_OUTPUT"
 
     - id: done
       shell: bash
@@ -43,4 +43,4 @@ runs:
       run: |
         dirname "$BINARY" >> "$GITHUB_PATH"
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-        echo "ship $VERSION at $BINARY"
+        echo "cutship $VERSION at $BINARY"

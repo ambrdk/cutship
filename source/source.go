@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ambrdk/ship/bump"
-	"github.com/ambrdk/ship/event"
-	"github.com/ambrdk/ship/github"
-	"github.com/ambrdk/ship/pin"
+	"github.com/ambrdk/cutship/bump"
+	"github.com/ambrdk/cutship/event"
+	"github.com/ambrdk/cutship/github"
+	"github.com/ambrdk/cutship/pin"
 )
 
 type Anchored struct {

@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/ambrdk/ship/event"
-	"github.com/ambrdk/ship/release"
-	"github.com/ambrdk/ship/render"
-	"github.com/ambrdk/ship/source"
-	"github.com/ambrdk/ship/store"
+	"github.com/ambrdk/cutship/event"
+	"github.com/ambrdk/cutship/release"
+	"github.com/ambrdk/cutship/render"
+	"github.com/ambrdk/cutship/source"
+	"github.com/ambrdk/cutship/store"
 	"github.com/ambrdk/notifykit/thread"
 )
 

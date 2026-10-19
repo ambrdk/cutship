@@ -1,4 +1,4 @@
-module github.com/ambrdk/ship
+module github.com/ambrdk/cutship
 
 go 1.26.0
 

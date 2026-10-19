@@ -1,39 +1,39 @@
-# ship
+# cutship
 
-One Go tool for the release cycle of ambrdk services: from a merge in a service to a deployed app and a Telegram post about it. Every rule of that cycle (which tag is allowed, what a bump branch is called, when a pull request can take the fast lane, when a deploy can skip CI) lives in one Go package here, and the workflows in `ci-templates` and `ansible` only call `ship`.
+One Go tool for the release cycle of ambrdk services: from a merge in a service to a deployed app and a Telegram post about it. Every rule of that cycle (which tag is allowed, what a bump branch is called, when a pull request can take the fast lane, when a deploy can skip CI) lives in one Go package here, and the workflows in `ci-templates` and `ansible` only call `cutship`.
 
-This repository used to be `deploy-notify`; `ship notify` is that tool.
+This repository used to be `deploy-notify`; `cutship notify` is that tool.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `ship notify` | keeps one Telegram post per release in sync with GitHub, see below |
-| `ship pin read [--root dir] <app>` | prints the image pinned in `apps/<app>/app.yml` |
-| `ship pin check [--root dir] <app> <image> <tag>` | prints `bump` or `same`, fails when the tag breaks the rule |
-| `ship pin set [--root dir] <app> <image> <tag>` | changes only the `image` line, keeps every other byte |
-| `ship pin verify [--root dir]` | checks every app pin against the tag rule |
-| `ship lane < files.json` | prints `fast` or `full` for the files of a pull request |
-| `ship bump name <app> <tag>` | prints `branch=` and `title=` of the bump pull request |
-| `ship bump parse <ref>` | prints `<app> <tag>` when the ref is a bump branch |
-| `ship bump superseded <app> <tag> < branches` | prints the open bump branches of the app with a lower version |
-| `ship gate head --pulls <file>` | prints the head sha of the merged bump pull request |
-| `ship gate skip --pulls <file> --checks <file> --pending <json\|unknown>` | prints `true` when the deploy can skip its CI run |
+| `cutship notify` | keeps one Telegram post per release in sync with GitHub, see below |
+| `cutship pin read [--root dir] <app>` | prints the image pinned in `apps/<app>/app.yml` |
+| `cutship pin check [--root dir] <app> <image> <tag>` | prints `bump` or `same`, fails when the tag breaks the rule |
+| `cutship pin set [--root dir] <app> <image> <tag>` | changes only the `image` line, keeps every other byte |
+| `cutship pin verify [--root dir]` | checks every app pin against the tag rule |
+| `cutship lane < files.json` | prints `fast` or `full` for the files of a pull request |
+| `cutship bump name <app> <tag>` | prints `branch=` and `title=` of the bump pull request |
+| `cutship bump parse <ref>` | prints `<app> <tag>` when the ref is a bump branch |
+| `cutship bump superseded <app> <tag> < branches` | prints the open bump branches of the app with a lower version |
+| `cutship gate head --pulls <file>` | prints the head sha of the merged bump pull request |
+| `cutship gate skip --pulls <file> --checks <file> --pending <json\|unknown>` | prints `true` when the deploy can skip its CI run |
 
 Output is plain values on stdout, one per line, so a step can write it to `$GITHUB_OUTPUT`. A broken rule prints `::error::<reason>` on stderr and exits 1; wrong arguments exit 2. The commands, their output and the exit codes are a versioned interface: an incompatible change needs a new major version.
 
 The rules are written down in `CONTEXT.md` here and in the deploy repository.
 
-## Using ship in a workflow
+## Using cutship in a workflow
 
 ```yaml
-- uses: ambrdk/ship/setup@<sha> # vX.Y.Z
-- run: ship pin check alert-relay ghcr.io/ambrdk/alert-relay "$TAG"
+- uses: ambrdk/cutship/setup@<sha> # vX.Y.Z
+- run: cutship pin check alert-relay ghcr.io/ambrdk/alert-relay "$TAG"
 ```
 
-`setup` puts the binary on `PATH`. Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `ship_linux_amd64`; setup finds the newest version tag on the commit it is pinned to (a SHA, a version tag or `v1`) and downloads that binary in a few seconds. Pinned to a branch or a commit without a release, it builds from source. The `version` input installs a given release instead of the pinned one and fails the job when that release cannot be downloaded, so a pipeline never runs a different ship than it asked for. The `version` output says what was installed.
+`setup` puts the binary on `PATH`. Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `cutship_linux_amd64`; setup finds the newest version tag on the commit it is pinned to (a SHA, a version tag or `v1`) and downloads that binary in a few seconds. Pinned to a branch or a commit without a release, it builds from source. The `version` input installs a given release instead of the pinned one and fails the job when that release cannot be downloaded, so a pipeline never runs a different cutship than it asked for. The `version` output says what was installed.
 
-## ship notify
+## cutship notify
 
 Keeps one Telegram post per release in sync with what GitHub does to it. A release is a bump pull request in the deploy repository (`bump/<app>-<tag>`, opened by `ci-templates` image-release). The post in the channel goes from 📦 waiting for merge to 🔀 merged, 🚀 deploying, and then ✅, ❌ or ⚪. Under it, in the channel's discussion group, one comment holds the details and a timeline. Both messages are edited in place, the same way alert-relay handles alerts.
 
@@ -85,7 +85,7 @@ jobs:
       pull-requests: write
       actions: read
     steps:
-      - uses: ambrdk/ship@<sha> # vX.Y.Z
+      - uses: ambrdk/cutship@<sha> # vX.Y.Z
         with:
           telegram-token: ${{ secrets.TELEGRAM_DEPLOY_BOT_TOKEN }}
           telegram-channel-id: ${{ secrets.TELEGRAM_DEPLOY_CHANNEL_ID }}
@@ -97,7 +97,7 @@ All runs share one concurrency group with `queue: max`, so events are handled on
 
 ### Environment
 
-The action sets these for `ship notify`:
+The action sets these for `cutship notify`:
 
 | Variable | Meaning |
 |---|---|
@@ -115,3 +115,7 @@ go test -race ./...
 bash scripts/pick_tag_test.sh
 bash scripts/install_test.sh
 ```
+
+## License
+
+Apache-2.0, see `LICENSE` and `NOTICE`.

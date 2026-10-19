@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/ambrdk/ship/gate"
+	"github.com/ambrdk/cutship/gate"
 )
 
 func readJSON(path string, v any) error {

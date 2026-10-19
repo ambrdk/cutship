@@ -12,7 +12,7 @@ func TestUsage(t *testing.T) {
 		if code := dispatch(args, strings.NewReader(""), &out, &errOut); code != 2 {
 			t.Fatalf("%v: code %d", args, code)
 		}
-		if !strings.Contains(errOut.String(), "usage: ship") {
+		if !strings.Contains(errOut.String(), "usage: cutship") {
 			t.Fatalf("%v: stderr %q", args, errOut.String())
 		}
 	}

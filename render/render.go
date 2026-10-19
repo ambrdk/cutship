@@ -8,8 +8,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/ambrdk/ship/event"
-	"github.com/ambrdk/ship/release"
+	"github.com/ambrdk/cutship/event"
+	"github.com/ambrdk/cutship/release"
 )
 
 //go:embed post.tmpl comment.tmpl

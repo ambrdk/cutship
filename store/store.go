@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ambrdk/ship/github"
-	"github.com/ambrdk/ship/release"
+	"github.com/ambrdk/cutship/github"
+	"github.com/ambrdk/cutship/release"
 	"github.com/ambrdk/notifykit/thread"
 )
 

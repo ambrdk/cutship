@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/ambrdk/ship/event"
+	"github.com/ambrdk/cutship/event"
 )
 
 type ReportHost struct {

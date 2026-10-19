@@ -1,6 +1,6 @@
-# ship context
+# cutship context
 
-**Release cycle.** A merge in a service releases a version, a bump pull request in the deploy repository pins it, its merge deploys it, and a Telegram post follows the whole way. ship holds the rules of that cycle; the workflows only call it.
+**Release cycle.** A merge in a service releases a version, a bump pull request in the deploy repository pins it, its merge deploys it, and a Telegram post follows the whole way. cutship holds the rules of that cycle; the workflows only call it.
 
 **Pin.** The `image` line of `apps/<app>/app.yml` in the deploy repository (package `pin`). Own images (`ghcr.io/ambrdk/*`) are pinned to `vMAJOR.MINOR.PATCH`; other images to any exact tag except `latest`, compared by their numeric prefix. `pin set` changes that line and nothing else.
 
@@ -12,6 +12,6 @@
 
 **Notify.** The Telegram post of a release and its comment, kept in sync with GitHub events (packages `source`, `release`, `render`, `store`, `notify`).
 
-**Interface.** The commands, their output and their exit codes are versioned: an incompatible change needs a new major version. `ci-templates` calls `ambrdk/ship/setup@v1` with an exact `version`, which fails the job when that release cannot be installed. The deploy repository pins `setup` and the notify action by SHA; without a `version` input, setup falls back to building the pinned ref from source.
+**Interface.** The commands, their output and their exit codes are versioned: an incompatible change needs a new major version. `ci-templates` calls `ambrdk/cutship/setup@v1` with an exact `version`, which fails the job when that release cannot be installed. The deploy repository pins `setup` and the notify action by SHA; without a `version` input, setup falls back to building the pinned ref from source.
 
 The deploy repository's own `CONTEXT.md` describes the same Pin, Bump and Lane from its side.

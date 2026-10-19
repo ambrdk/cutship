@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ambrdk/ship/event"
-	"github.com/ambrdk/ship/github"
+	"github.com/ambrdk/cutship/event"
+	"github.com/ambrdk/cutship/github"
 )
 
 const repo = "ambrdk/ansible"

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ambrdk/ship/event"
-	"github.com/ambrdk/ship/release"
+	"github.com/ambrdk/cutship/event"
+	"github.com/ambrdk/cutship/release"
 )
 
 var t0 = time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC)

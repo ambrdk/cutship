@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ambrdk/ship/pin"
+	"github.com/ambrdk/cutship/pin"
 )
 
 func fail(stderr io.Writer, err error) int {

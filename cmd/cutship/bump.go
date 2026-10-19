@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ambrdk/ship/bump"
-	"github.com/ambrdk/ship/pin"
+	"github.com/ambrdk/cutship/bump"
+	"github.com/ambrdk/cutship/pin"
 )
 
 func bumpCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) int {

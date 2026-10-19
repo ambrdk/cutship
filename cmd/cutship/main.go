@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const usage = `usage: ship <command> [arguments]
+const usage = `usage: cutship <command> [arguments]
 
 commands:
   notify                                   post release and deploy events to Telegram

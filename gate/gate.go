@@ -3,7 +3,7 @@ package gate
 import (
 	"time"
 
-	"github.com/ambrdk/ship/bump"
+	"github.com/ambrdk/cutship/bump"
 )
 
 const requiredCheck = "lint"

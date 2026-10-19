@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ambrdk/ship/github"
-	"github.com/ambrdk/ship/notify"
-	"github.com/ambrdk/ship/source"
-	"github.com/ambrdk/ship/store"
+	"github.com/ambrdk/cutship/github"
+	"github.com/ambrdk/cutship/notify"
+	"github.com/ambrdk/cutship/source"
+	"github.com/ambrdk/cutship/store"
 	"github.com/ambrdk/notifykit/telegram"
 	"github.com/ambrdk/notifykit/thread"
 )
@@ -28,7 +28,7 @@ func notifyCommand(stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if err := runNotify(ctx, log); err != nil {
-		log.Error("ship notify failed", "error", err)
+		log.Error("cutship notify failed", "error", err)
 		return 1
 	}
 	return 0

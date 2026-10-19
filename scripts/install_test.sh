@@ -22,7 +22,7 @@ if [[ "$1 $2" == "release download" ]]; then
     esac
   done
   if [[ " $FAKE_ASSETS " == *" $tag "* ]]; then
-    printf 'binary %s' "$tag" > "$dest/ship_linux_amd64"
+    printf 'binary %s' "$tag" > "$dest/cutship_linux_amd64"
     exit 0
   fi
   echo "no assets match the file pattern" >&2
@@ -41,14 +41,14 @@ tags='[
 check() {
   local name="$1" ref="$2" want="$3"
   local dest="$work/$name" out
-  out="$(PATH="$work/bin:$PATH" FAKE_TAGS="$tags" FAKE_ASSETS="v0.3.0" "$dir/install.sh" ambrdk/ship "$ref" "$dest" 2>&1)"
+  out="$(PATH="$work/bin:$PATH" FAKE_TAGS="$tags" FAKE_ASSETS="v0.3.0" "$dir/install.sh" ambrdk/cutship "$ref" "$dest" 2>&1)"
   if [[ "$out" != "$want" ]]; then
     echo "FAIL: $name: got '$out', want '$want'"
     failed=$((failed + 1))
     return
   fi
-  if [[ -n "$want" && ! -x "$dest/ship" ]]; then
-    echo "FAIL: $name: $dest/ship is not executable"
+  if [[ -n "$want" && ! -x "$dest/cutship" ]]; then
+    echo "FAIL: $name: $dest/cutship is not executable"
     failed=$((failed + 1))
   fi
 }
@@ -56,7 +56,7 @@ check() {
 check_required() {
   local name="$1" ref="$2" want_code="$3"
   local out code
-  out="$(PATH="$work/bin:$PATH" FAKE_TAGS="$tags" FAKE_ASSETS="v0.3.0" SHIP_REQUIRED=1 "$dir/install.sh" ambrdk/ship "$ref" "$work/$name" 2>&1)"
+  out="$(PATH="$work/bin:$PATH" FAKE_TAGS="$tags" FAKE_ASSETS="v0.3.0" CUTSHIP_REQUIRED=1 "$dir/install.sh" ambrdk/cutship "$ref" "$work/$name" 2>&1)"
   code=$?
   if [[ "$code" != "$want_code" ]]; then
     echo "FAIL: $name: exit $code, want $want_code ($out)"
@@ -73,11 +73,11 @@ check_required "required release" v0.3.0 0
 check_required "required release without asset" v0.2.0 1
 check_required "required unknown version" v9.9.9 1
 
-check "release with asset" ccc "binary=$work/release with asset/ship
+check "release with asset" ccc "binary=$work/release with asset/cutship
 version=v0.3.0"
-check "moving tag" v1 "binary=$work/moving tag/ship
+check "moving tag" v1 "binary=$work/moving tag/cutship
 version=v0.3.0"
-check "old release without ship asset" bbb ""
+check "old release without cutship asset" bbb ""
 check "commit without release" ddd ""
 check "branch" main ""
 check "empty ref" "" ""

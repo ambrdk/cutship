@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/ambrdk/ship/pin"
+	"github.com/ambrdk/cutship/pin"
 )
 
 var (

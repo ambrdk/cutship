@@ -12,8 +12,8 @@ dest="$3"
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 none() {
-  if [[ -n "${SHIP_REQUIRED:-}" ]]; then
-    echo "::error::cannot install ship $ref from $repo: $1" >&2
+  if [[ -n "${CUTSHIP_REQUIRED:-}" ]]; then
+    echo "::error::cannot install cutship $ref from $repo: $1" >&2
     exit 1
   fi
   exit 0
@@ -25,8 +25,8 @@ tag="$(printf '%s' "$tags" | "$dir/pick_tag.sh" "$ref")"
 [[ -n "$tag" ]] || none "no release tag on that ref"
 
 mkdir -p "$dest"
-gh release download "$tag" -R "$repo" -p ship_linux_amd64 -D "$dest" --clobber >/dev/null 2>&1 || none "release $tag has no ship_linux_amd64"
-mv "$dest/ship_linux_amd64" "$dest/ship"
-chmod +x "$dest/ship"
-echo "binary=$dest/ship"
+gh release download "$tag" -R "$repo" -p cutship_linux_amd64 -D "$dest" --clobber >/dev/null 2>&1 || none "release $tag has no cutship_linux_amd64"
+mv "$dest/cutship_linux_amd64" "$dest/cutship"
+chmod +x "$dest/cutship"
+echo "binary=$dest/cutship"
 echo "version=$tag"
