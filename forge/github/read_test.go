@@ -157,6 +157,20 @@ func TestChangeStates(t *testing.T) {
 	}
 }
 
+func TestGetChange(t *testing.T) {
+	c := serve(t, map[string]http.HandlerFunc{
+		"GET /repos/o/r/pulls/5": reply(`{"number":5,"state":"closed","merged_at":"2026-10-18T10:00:00Z","merged_by":{"login":"exassed"},"user":{"login":"pat"},"head":{"ref":"bump/a-v1.0.0","sha":"h5"}}`),
+	})
+	ch, err := c.GetChange(ctx, "o/r", 5)
+	if err != nil || ch.MergedBy != "exassed" || ch.Author != "pat" || ch.State != forge.Merged {
+		t.Fatalf("%+v %v", ch, err)
+	}
+	missing := serve(t, map[string]http.HandlerFunc{"GET /repos/o/r/pulls/5": status(404, `{"message":"Not Found"}`)})
+	if _, err := missing.GetChange(ctx, "o/r", 5); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestChangesForCommitAndFiles(t *testing.T) {
 	c := serve(t, map[string]http.HandlerFunc{
 		"GET /repos/o/r/commits/s1/pulls": reply(`[{"number":5,"state":"closed","merged_at":"2026-10-18T10:00:00Z","head":{"ref":"bump/a-v1.0.0","sha":"h5"}}]`),

@@ -70,6 +70,7 @@ type Reader interface {
 	Subtrees(ctx context.Context, repo, dir, ref string) (map[string]string, error)
 	OpenChanges(ctx context.Context, repo, headPrefix string) ([]Change, error)
 	ChangeByHead(ctx context.Context, repo, head string) (Change, bool, error)
+	GetChange(ctx context.Context, repo string, n int) (Change, error)
 	ChangesForCommit(ctx context.Context, repo, sha string) ([]Change, error)
 	ChangeFiles(ctx context.Context, repo string, n int) ([]File, error)
 	Checks(ctx context.Context, repo, sha string) ([]Check, error)

@@ -167,23 +167,29 @@ func homeOf(ctx context.Context, f forge.Reader, cfg config.Config, repo, sha, a
 	if err != nil {
 		return home{}, err
 	}
-	var plain *forge.Change
-	for i, c := range changes {
+	var chosen home
+	for _, c := range changes {
 		if c.MergedAt == nil {
 			continue
 		}
 		other, tag, isBump := bump.Parse(cfg.Release, c.HeadRef)
 		if isBump && other == app {
-			return home{change: c, tag: tag, found: true}, nil
+			chosen = home{change: c, tag: tag, found: true}
+			break
 		}
-		if !isBump && plain == nil {
-			plain = &changes[i]
+		if !isBump && !chosen.found {
+			chosen = home{change: c, found: true}
 		}
 	}
-	if plain != nil {
-		return home{change: *plain, found: true}, nil
+	if !chosen.found {
+		return home{}, nil
 	}
-	return home{}, nil
+	full, err := f.GetChange(ctx, repo, chosen.change.Number)
+	if err != nil {
+		return home{}, fmt.Errorf("read pull request #%d: %w", chosen.change.Number, err)
+	}
+	chosen.change = full
+	return chosen, nil
 }
 
 func merged(ch forge.Change, app string) event.Event {

@@ -177,6 +177,18 @@ func (c *Client) ChangeByHead(ctx context.Context, full, head string) (forge.Cha
 	return all[0], true, nil
 }
 
+func (c *Client) GetChange(ctx context.Context, full string, n int) (forge.Change, error) {
+	owner, name, err := repo(full)
+	if err != nil {
+		return forge.Change{}, err
+	}
+	pr, _, err := c.gh.PullRequests.Get(ctx, owner, name, n)
+	if err != nil {
+		return forge.Change{}, wrap(err)
+	}
+	return change(pr), nil
+}
+
 func (c *Client) ChangesForCommit(ctx context.Context, full, sha string) ([]forge.Change, error) {
 	owner, name, err := repo(full)
 	if err != nil {

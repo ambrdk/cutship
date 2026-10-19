@@ -372,6 +372,19 @@ func (f *Forge) ChangeByHead(_ context.Context, name, head string) (forge.Change
 	return forge.Change{}, false, nil
 }
 
+func (f *Forge) GetChange(_ context.Context, name string, n int) (forge.Change, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.enter("GetChange"); err != nil {
+		return forge.Change{}, err
+	}
+	r := f.repo(name)
+	if n < 1 || n > len(r.changes) {
+		return forge.Change{}, fmt.Errorf("change %d: %w", n, forge.ErrNotFound)
+	}
+	return *r.changes[n-1], nil
+}
+
 func (f *Forge) ChangesForCommit(_ context.Context, name, sha string) ([]forge.Change, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -381,7 +394,9 @@ func (f *Forge) ChangesForCommit(_ context.Context, name, sha string) ([]forge.C
 	r := f.repo(name)
 	var out []forge.Change
 	for _, n := range r.pullsByCommit[sha] {
-		out = append(out, *r.changes[n-1])
+		simple := *r.changes[n-1]
+		simple.MergedBy = ""
+		out = append(out, simple)
 	}
 	return out, nil
 }
