@@ -33,10 +33,14 @@ func parsePending(text string) []string {
 }
 
 func gateCommand(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || (args[0] != "head" && args[0] != "skip") {
+	if len(args) == 0 {
 		return usageError(stderr)
 	}
-	fs := flag.NewFlagSet("gate "+args[0], flag.ContinueOnError)
+	sub := args[0]
+	if sub != "head" && sub != "skip" {
+		return usageError(stderr)
+	}
+	fs := flag.NewFlagSet("gate "+sub, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	path := fs.String("config", "cutship.yaml", "")
 	pullsPath := fs.String("pulls", "", "")
@@ -45,7 +49,7 @@ func gateCommand(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 || *pullsPath == "" {
 		return usageError(stderr)
 	}
-	if args[0] == "skip" && (*checksPath == "" || *pending == "") {
+	if sub == "skip" && (*checksPath == "" || *pending == "") {
 		return usageError(stderr)
 	}
 	cfg, ok := loadConfig(*path, stderr)
@@ -66,7 +70,7 @@ func gateCommand(args []string, stdout, stderr io.Writer) int {
 	for _, p := range pulls {
 		changes = append(changes, forge.Change{HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, MergedAt: p.MergedAt})
 	}
-	if args[0] == "head" {
+	if sub == "head" {
 		merged, _ := gate.Bump(cfg.Release, changes)
 		_, _ = fmt.Fprintln(stdout, merged.HeadSHA)
 		return 0

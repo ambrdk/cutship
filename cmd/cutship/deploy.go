@@ -18,10 +18,14 @@ import (
 )
 
 func deployCommand(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || (args[0] != "plan" && args[0] != "start" && args[0] != "finish") {
+	if len(args) == 0 {
 		return usageError(stderr)
 	}
-	fs := flag.NewFlagSet("deploy "+args[0], flag.ContinueOnError)
+	sub := args[0]
+	if sub != "plan" && sub != "start" && sub != "finish" {
+		return usageError(stderr)
+	}
+	fs := flag.NewFlagSet("deploy "+sub, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	path := fs.String("config", "cutship.yaml", "")
 	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "")
@@ -35,7 +39,7 @@ func deployCommand(args []string, stdout, stderr io.Writer) int {
 	if fs.Parse(args[1:]) != nil || fs.NArg() != 0 || *repo == "" {
 		return usageError(stderr)
 	}
-	switch args[0] {
+	switch sub {
 	case "plan":
 		if *base == "" || *head == "" {
 			return usageError(stderr)
@@ -65,7 +69,7 @@ func deployCommand(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, errors.New("the forge does not support deployments"))
 	}
 	ctx := context.Background()
-	if args[0] == "plan" {
+	if sub == "plan" {
 		if strings.Trim(*base, "0") == "" {
 			*base = *head
 		}
@@ -96,7 +100,7 @@ func deployCommand(args []string, stdout, stderr io.Writer) int {
 	if server, id := os.Getenv("GITHUB_SERVER_URL"), os.Getenv("GITHUB_RUN_ID"); server != "" && id != "" {
 		run.LogURL = server + "/" + *repo + "/actions/runs/" + id
 	}
-	if args[0] == "start" {
+	if sub == "start" {
 		if err := deploy.Start(ctx, f, d, cfg, run, apps); err != nil {
 			return fail(stderr, err)
 		}
