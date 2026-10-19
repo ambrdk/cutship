@@ -83,12 +83,58 @@ func commit(t *testing.T, dir, subject string) {
 
 func resolve(t *testing.T, dir string, rel config.Release, want string) {
 	t.Helper()
-	got, _, err := version.Resolve(dir, rel)
+	got, err := version.Resolve(dir, rel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != want {
-		t.Errorf("Resolve = %q, want %q", got, want)
+	if got.Tag != want {
+		t.Errorf("Resolve = %q, want %q", got.Tag, want)
+	}
+}
+
+func TestResolveReportsLast(t *testing.T) {
+	r := repo(t)
+	commit(t, r, "feat: a")
+	got, err := version.Resolve(r, vFormat)
+	if err != nil || got.Last != "" || got.Tag != "v0.1.0" {
+		t.Fatalf("no tags: %+v %v", got, err)
+	}
+	git(t, r, "tag", "v0.1.0")
+	commit(t, r, "fix: b")
+	got, err = version.Resolve(r, vFormat)
+	if err != nil || got.Last != "v0.1.0" || got.Tag != "v0.1.1" || got.Head {
+		t.Fatalf("since tag: %+v %v", got, err)
+	}
+	git(t, r, "tag", "v0.1.1")
+	got, err = version.Resolve(r, vFormat)
+	if err != nil || got.Tag != "v0.1.1" || !got.Head {
+		t.Fatalf("head tagged: %+v %v", got, err)
+	}
+}
+
+func TestResolveTagsInAnotherFormat(t *testing.T) {
+	plain := config.Release{TagFormat: "{version}"}
+	r := repo(t)
+	commit(t, r, "feat: a")
+	git(t, r, "tag", "v1.4.0")
+	commit(t, r, "fix: b")
+	_, err := version.Resolve(r, plain)
+	if err == nil || !strings.Contains(err.Error(), "v1.4.0") || !strings.Contains(err.Error(), "{version}") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestResolveOnlyMovingTag(t *testing.T) {
+	r := repo(t)
+	commit(t, r, "feat: a")
+	git(t, r, "tag", "v1")
+	resolve(t, r, vFormat, "v0.1.0")
+}
+
+func TestResolveNoCommits(t *testing.T) {
+	_, err := version.Resolve(repo(t), vFormat)
+	if err == nil || !strings.Contains(err.Error(), "no commits") {
+		t.Errorf("err = %v", err)
 	}
 }
 
@@ -148,12 +194,12 @@ func TestResolveWarnings(t *testing.T) {
 	r := repo(t)
 	commit(t, r, "Initial commit")
 	commit(t, r, "fix: a")
-	got, warnings, err := version.Resolve(r, vFormat)
-	if err != nil || got != "v0.0.1" {
-		t.Fatalf("Resolve = %q, %v", got, err)
+	got, err := version.Resolve(r, vFormat)
+	if err != nil || got.Tag != "v0.0.1" {
+		t.Fatalf("Resolve = %+v, %v", got, err)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "Initial commit") {
-		t.Errorf("warnings = %q", warnings)
+	if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "Initial commit") {
+		t.Errorf("warnings = %q", got.Warnings)
 	}
 }
 
@@ -163,7 +209,7 @@ func TestResolveShallow(t *testing.T) {
 	commit(t, src, "fix: b")
 	dst := filepath.Join(t.TempDir(), "shallow")
 	git(t, src, "clone", "-q", "--depth", "1", "file://"+src, dst)
-	_, _, err := version.Resolve(dst, vFormat)
+	_, err := version.Resolve(dst, vFormat)
 	if err == nil || !strings.Contains(err.Error(), "fetch-depth: 0") {
 		t.Errorf("err = %v", err)
 	}
@@ -183,10 +229,10 @@ func TestResolvePlainFormat(t *testing.T) {
 }
 
 func TestResolveNotARepo(t *testing.T) {
-	if _, _, err := version.Resolve(t.TempDir(), vFormat); err == nil {
+	if _, err := version.Resolve(t.TempDir(), vFormat); err == nil {
 		t.Error("no error outside a repository")
 	}
-	if _, _, err := version.Resolve(filepath.Join(t.TempDir(), "missing"), vFormat); err == nil {
+	if _, err := version.Resolve(filepath.Join(t.TempDir(), "missing"), vFormat); err == nil {
 		t.Error("no error for a missing directory")
 	}
 }

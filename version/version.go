@@ -66,38 +66,77 @@ func Next(last string, subjects []string) (string, []string) {
 	return "", warnings
 }
 
-func Resolve(dir string, rel config.Release) (string, []string, error) {
+type Result struct {
+	Tag      string
+	Last     string
+	Head     bool
+	Warnings []string
+}
+
+func (r Result) Summary() string {
+	if r.Head {
+		return "HEAD is already " + r.Tag
+	}
+	last, next := r.Last, r.Tag
+	if last == "" {
+		last = "none"
+	}
+	if next == "" {
+		next = "none"
+	}
+	return fmt.Sprintf("last release %s, next %s", last, next)
+}
+
+var versionLike = regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+`)
+
+func Resolve(dir string, rel config.Release) (Result, error) {
 	shallow, err := git(dir, "rev-parse", "--is-shallow-repository")
 	if err != nil {
-		return "", nil, err
+		return Result{}, err
 	}
 	if strings.TrimSpace(shallow) == "true" {
-		return "", nil, errors.New("the next version needs the full history: check out with fetch-depth: 0")
+		return Result{}, errors.New("the next version needs the full history: check out with fetch-depth: 0")
+	}
+	if _, err := git(dir, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"); err != nil {
+		return Result{}, errors.New("the repository has no commits yet")
 	}
 	head, err := git(dir, "tag", "--points-at", "HEAD")
 	if err != nil {
-		return "", nil, err
+		return Result{}, err
 	}
 	if tag, _, ok := highest(rel, head); ok {
-		return tag, nil, nil
+		return Result{Tag: tag, Last: tag, Head: true}, nil
 	}
 	merged, err := git(dir, "tag", "--merged", "HEAD")
 	if err != nil {
-		return "", nil, err
+		return Result{}, err
 	}
+	res := Result{}
 	last, revs := "0.0.0", "HEAD"
 	if tag, v, ok := highest(rel, merged); ok {
-		last, revs = v, "refs/tags/"+tag+"..HEAD"
+		res.Last, last, revs = tag, v, "refs/tags/"+tag+"..HEAD"
+	} else if other := lookalike(merged); other != "" {
+		return Result{}, fmt.Errorf("no tag matches release.tag_format %q, but %s exists: fix tag_format or tag the last release in that format", rel.Tag("{version}"), other)
 	}
 	log, err := git(dir, "log", "--format=%s", revs)
 	if err != nil {
-		return "", nil, err
+		return Result{}, err
 	}
 	next, warnings := Next(last, strings.Split(log, "\n"))
-	if next == "" {
-		return "", warnings, nil
+	res.Warnings = warnings
+	if next != "" {
+		res.Tag = rel.Tag(next)
 	}
-	return rel.Tag(next), warnings, nil
+	return res, nil
+}
+
+func lookalike(tags string) string {
+	for _, tag := range strings.Fields(tags) {
+		if versionLike.MatchString(tag) {
+			return tag
+		}
+	}
+	return ""
 }
 
 func highest(rel config.Release, tags string) (string, string, bool) {

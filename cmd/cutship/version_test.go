@@ -38,7 +38,7 @@ func TestVersionCLI(t *testing.T) {
 	if code != 0 || out != "v0.1.1\n" {
 		t.Fatalf("next: %d %q %q", code, out, errOut)
 	}
-	if errOut != "::warning::not a conventional commit subject, no release from it: Merge branch x\n" {
+	if errOut != "::warning::not a conventional commit subject, no release from it: Merge branch x\nlast release v0.1.0, next v0.1.1\n" {
 		t.Errorf("stderr %q", errOut)
 	}
 
@@ -47,7 +47,7 @@ func TestVersionCLI(t *testing.T) {
 		[]string{"tag", "v0.1.0"},
 		[]string{"commit", "-q", "--allow-empty", "-m", "docs: b"},
 	)
-	if code, out, errOut := run(t, "", "version", "next", "--config", cfg, "--app", "alert-relay", "--dir", quiet); code != 0 || out != "" || errOut != "" {
+	if code, out, errOut := run(t, "", "version", "next", "--config", cfg, "--app", "alert-relay", "--dir", quiet); code != 0 || out != "" || errOut != "last release v0.1.0, next none\n" {
 		t.Errorf("no release: %d %q %q", code, out, errOut)
 	}
 

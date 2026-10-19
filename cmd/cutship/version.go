@@ -27,15 +27,16 @@ func versionCommand(args []string, stdout, stderr io.Writer) int {
 	if _, ok := cfg.App(*app); !ok {
 		return fail(stderr, fmt.Errorf("app %q is not in %s", *app, *path))
 	}
-	tag, warnings, err := version.Resolve(*dir, cfg.Release)
-	for _, w := range warnings {
-		_, _ = fmt.Fprintf(stderr, "::warning::%s\n", w)
-	}
+	res, err := version.Resolve(*dir, cfg.Release)
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if tag != "" {
-		_, _ = fmt.Fprintln(stdout, tag)
+	for _, w := range res.Warnings {
+		_, _ = fmt.Fprintf(stderr, "::warning::%s\n", w)
+	}
+	_, _ = fmt.Fprintln(stderr, res.Summary())
+	if res.Tag != "" {
+		_, _ = fmt.Fprintln(stdout, res.Tag)
 	}
 	return 0
 }
