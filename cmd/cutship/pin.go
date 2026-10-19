@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/pin"
 )
 
@@ -14,37 +15,52 @@ func fail(stderr io.Writer, err error) int {
 	return 1
 }
 
-func rootFlags(name string, args []string) (string, []string, error) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	root := fs.String("root", ".", "")
-	if err := fs.Parse(args); err != nil {
-		return "", nil, err
-	}
-	return *root, fs.Args(), nil
-}
+var pinArity = map[string]int{"read": 1, "check": 2, "set": 2, "verify": 0}
 
 func pinCommand(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		return usageError(stderr)
 	}
-	root, rest, err := rootFlags("pin "+args[0], args[1:])
-	if err != nil {
+	arity, known := pinArity[args[0]]
+	fs := flag.NewFlagSet("pin "+args[0], flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	path := fs.String("config", "cutship.yaml", "")
+	root := fs.String("root", ".", "")
+	if !known || fs.Parse(args[1:]) != nil || fs.NArg() != arity {
 		return usageError(stderr)
 	}
-	switch {
-	case args[0] == "read" && len(rest) == 1:
-		ref, err := pin.Read(root, rest[0])
+	cfg, ok := loadConfig(*path, stderr)
+	if !ok {
+		return 1
+	}
+	rest := fs.Args()
+	if args[0] == "verify" {
+		errs := pin.Verify(*root, cfg)
+		for _, err := range errs {
+			fail(stderr, err)
+		}
+		if len(errs) > 0 {
+			return 1
+		}
+		return 0
+	}
+	app, ok := cfg.App(rest[0])
+	if !ok {
+		return fail(stderr, fmt.Errorf("app %q is not in %s", rest[0], *path))
+	}
+	switch args[0] {
+	case "read":
+		ref, err := pin.Read(*root, app)
 		if err != nil {
 			return fail(stderr, err)
 		}
 		_, _ = fmt.Fprintln(stdout, ref)
-	case args[0] == "check" && len(rest) == 3:
-		current, err := pin.Read(root, rest[0])
+	case "check":
+		current, err := pin.Read(*root, app)
 		if err != nil {
 			return fail(stderr, err)
 		}
-		bump, err := pin.Check(current, rest[1], rest[2])
+		bump, err := pin.Check(app, cfg.Release, current, rest[1])
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -53,36 +69,36 @@ func pinCommand(args []string, stdout, stderr io.Writer) int {
 			result = "bump"
 		}
 		_, _ = fmt.Fprintln(stdout, result)
-	case args[0] == "set" && len(rest) == 3:
-		if err := pin.Set(root, rest[0], rest[1], rest[2]); err != nil {
+	case "set":
+		if err := pin.Set(*root, app, cfg.Release, rest[1]); err != nil {
 			return fail(stderr, err)
 		}
-	case args[0] == "verify" && len(rest) == 0:
-		errs := pin.Verify(root)
-		for _, err := range errs {
-			fail(stderr, err)
-		}
-		if len(errs) > 0 {
-			return 1
-		}
-	default:
-		return usageError(stderr)
 	}
 	return 0
 }
 
 func laneCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) != 0 {
+	path, rest, err := configFlags("lane", args)
+	if err != nil || len(rest) != 0 {
 		return usageError(stderr)
+	}
+	cfg, ok := loadConfig(path, stderr)
+	if !ok {
+		return 1
 	}
 	var files []pin.File
 	if err := json.NewDecoder(stdin).Decode(&files); err != nil {
 		return fail(stderr, fmt.Errorf("read pull request files: %w", err))
 	}
 	lane := "full"
-	if pin.ImageOnly(files) {
+	if pin.ImageOnly(cfg, files) {
 		lane = "fast"
 	}
 	_, _ = fmt.Fprintln(stdout, lane)
 	return 0
+}
+
+func releaseConfig(path string, stderr io.Writer) (config.Release, bool) {
+	cfg, ok := loadConfig(path, stderr)
+	return cfg.Release, ok
 }

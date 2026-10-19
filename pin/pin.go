@@ -9,17 +9,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ambrdk/cutship/config"
 )
 
-const OwnPrefix = "ghcr.io/ambrdk/"
-
 var (
-	ErrRule   = errors.New("pin rule")
-	appName   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	semver    = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)$`)
-	numeric   = regexp.MustCompile(`^v?(\d+(?:\.\d+)*)`)
-	imageLine = regexp.MustCompile(`^image:[ \t]*(["']?)([^"'\s#]+)(["']?)[ \t]*$`)
-	appPath   = regexp.MustCompile(`^apps/[a-z0-9][a-z0-9-]*/app\.yml$`)
+	ErrRule     = errors.New("pin rule")
+	appName     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	numeric     = regexp.MustCompile(`^v?(\d+(?:\.\d+)*)`)
+	imageLine   = regexp.MustCompile(`^image:[ \t]*(["']?)([^"'\s#]+)(["']?)[ \t]*$`)
+	ansibleFile = regexp.MustCompile(`^apps/([a-z0-9][a-z0-9-]*)/app\.yml$`)
 )
 
 type File struct {
@@ -66,37 +65,38 @@ func Line(content []byte) (string, bool) {
 	return "", false
 }
 
-func path(root, app string) string {
-	return filepath.Join(root, "apps", app, "app.yml")
+func Path(app config.App) string {
+	return "apps/" + app.Name + "/app.yml"
 }
 
-func Read(root, app string) (string, error) {
-	content, err := os.ReadFile(path(root, app))
+func file(root string, app config.App) string {
+	return filepath.Join(root, filepath.FromSlash(Path(app)))
+}
+
+func Read(root string, app config.App) (string, error) {
+	content, err := os.ReadFile(file(root, app))
 	if errors.Is(err, os.ErrNotExist) {
-		return "", rule("apps/%s/app.yml not found", app)
+		return "", rule("%s not found", Path(app))
 	}
 	if err != nil {
 		return "", err
 	}
 	ref, ok := Line(content)
 	if !ok {
-		return "", rule("no top-level image in apps/%s/app.yml", app)
+		return "", rule("no top-level image in %s", Path(app))
 	}
 	return ref, nil
 }
 
-func isOwn(repo string) bool {
-	return strings.HasPrefix(repo, OwnPrefix)
+func releaseVersion(rel config.Release, tag string) ([]int, bool) {
+	v, ok := rel.Version(tag)
+	if !ok {
+		return nil, false
+	}
+	return ints(strings.Split(v, ".")), true
 }
 
-func version(repo, tag string) ([]int, bool) {
-	if isOwn(repo) {
-		m := semver.FindStringSubmatch(tag)
-		if m == nil {
-			return nil, false
-		}
-		return ints(m[1:]), true
-	}
+func foreignVersion(tag string) ([]int, bool) {
 	if tag == "" || tag == "latest" {
 		return nil, false
 	}
@@ -133,35 +133,33 @@ func cmpInts(a, b []int) int {
 	return 0
 }
 
-func compare(repo, oldTag, newTag string) int {
-	oldV, _ := version(repo, oldTag)
-	newV, _ := version(repo, newTag)
-	if len(oldV) > 0 && len(newV) > 0 {
-		if c := cmpInts(newV, oldV); c != 0 {
-			return c
+func ownApp(cfg config.Config, image string) (config.App, bool) {
+	for _, a := range cfg.Apps {
+		if a.Image == image {
+			return a, true
 		}
 	}
-	if oldTag == newTag {
-		return 0
-	}
-	return 1
+	return config.App{}, false
 }
 
-func Check(current, image, tag string) (bool, error) {
+func formatRule(rel config.Release, tag string) error {
+	return rule("tag format: '%s' must be %s with MAJOR.MINOR.PATCH", tag, rel.Tag("{version}"))
+}
+
+func Check(app config.App, rel config.Release, current, tag string) (bool, error) {
 	currentRepo, currentTag := ParseRef(current)
-	if currentRepo != image {
-		return false, rule("image mismatch: '%s' in app.yml, '%s' in release", currentRepo, image)
+	if currentRepo != app.Image {
+		return false, rule("image mismatch: '%s' in %s, '%s' in cutship.yaml", currentRepo, Path(app), app.Image)
 	}
-	if _, ok := version(image, tag); !ok {
-		if isOwn(image) {
-			return false, rule("tag format: '%s' must be vMAJOR.MINOR.PATCH", tag)
-		}
-		return false, rule("tag format: '%s' must be an exact tag other than latest", tag)
+	newV, ok := releaseVersion(rel, tag)
+	if !ok {
+		return false, formatRule(rel, tag)
 	}
-	if _, ok := version(currentRepo, currentTag); !ok {
+	oldV, ok := releaseVersion(rel, currentTag)
+	if !ok {
 		return false, rule("current tag: '%s' in '%s' is not a release tag", currentTag, current)
 	}
-	switch compare(image, currentTag, tag) {
+	switch cmpInts(newV, oldV) {
 	case -1:
 		return false, rule("tag %s is lower than current %s", tag, currentTag)
 	case 0:
@@ -170,12 +168,12 @@ func Check(current, image, tag string) (bool, error) {
 	return true, nil
 }
 
-func Set(root, app, image, tag string) error {
-	if _, ok := version(image, tag); !ok {
-		return rule("tag format: '%s' is not a release tag for %s", tag, image)
+func Set(root string, app config.App, rel config.Release, tag string) error {
+	if _, ok := releaseVersion(rel, tag); !ok {
+		return formatRule(rel, tag)
 	}
-	file := path(root, app)
-	content, err := os.ReadFile(file)
+	path := file(root, app)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -184,31 +182,32 @@ func Set(root, app, image, tag string) error {
 	for i, line := range lines {
 		if _, _, ok := parseLine(line); ok {
 			if found >= 0 {
-				return rule("apps/%s/app.yml must have exactly one top-level image", app)
+				return rule("%s must have exactly one top-level image", Path(app))
 			}
 			found = i
 		}
 	}
 	if found < 0 {
-		return rule("no top-level image in apps/%s/app.yml", app)
+		return rule("no top-level image in %s", Path(app))
 	}
 	line := lines[found]
 	body := strings.TrimRight(line, "\r\n")
 	_, quote, _ := parseLine(line)
-	lines[found] = "image: " + quote + image + ":" + tag + quote + line[len(body):]
-	info, err := os.Stat(file)
+	lines[found] = "image: " + quote + app.Image + ":" + tag + quote + line[len(body):]
+	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(file, []byte(strings.Join(lines, "")), info.Mode().Perm())
+	return os.WriteFile(path, []byte(strings.Join(lines, "")), info.Mode().Perm())
 }
 
-func ImageOnly(files []File) bool {
+func ImageOnly(cfg config.Config, files []File) bool {
 	if len(files) != 1 {
 		return false
 	}
 	f := files[0]
-	if !appPath.MatchString(f.Filename) || f.Status != "modified" || f.Patch == "" {
+	m := ansibleFile.FindStringSubmatch(f.Filename)
+	if m == nil || f.Status != "modified" || f.Patch == "" {
 		return false
 	}
 	var removed, added []string
@@ -234,36 +233,75 @@ func ImageOnly(files []File) bool {
 	if oldRepo != newRepo {
 		return false
 	}
-	oldV, okOldV := version(oldRepo, oldTag)
-	newV, okNewV := version(newRepo, newTag)
+	version := foreignVersion
+	if app, ok := cfg.App(m[1]); ok {
+		if app.Image != newRepo {
+			return false
+		}
+		version = func(tag string) ([]int, bool) { return releaseVersion(cfg.Release, tag) }
+	} else if _, ok := ownApp(cfg, newRepo); ok {
+		return false
+	}
+	oldV, okOldV := version(oldTag)
+	newV, okNewV := version(newTag)
 	return okOldV && okNewV && len(oldV) > 0 && len(newV) > 0 && cmpInts(newV, oldV) > 0
 }
 
-func Verify(root string) []error {
-	dirs, err := filepath.Glob(filepath.Join(root, "apps", "*", "app.yml"))
+func Verify(root string, cfg config.Config) []error {
+	files, err := filepath.Glob(filepath.Join(root, "apps", "*", "app.yml"))
 	if err != nil {
 		return []error{err}
 	}
-	if len(dirs) == 0 {
+	if len(files) == 0 {
 		return []error{rule("no apps found under %s", filepath.Join(root, "apps"))}
 	}
-	sort.Strings(dirs)
+	sort.Strings(files)
+	seen := map[string]bool{}
 	var errs []error
-	for _, file := range dirs {
-		app := filepath.Base(filepath.Dir(file))
-		if !ValidApp(app) {
-			errs = append(errs, rule("app name '%s' must match %s", app, appName))
+	for _, f := range files {
+		name := filepath.Base(filepath.Dir(f))
+		seen[name] = true
+		if !ValidApp(name) {
+			errs = append(errs, rule("app name '%s' must match %s", name, appName))
 			continue
+		}
+		app, configured := cfg.App(name)
+		if !configured {
+			app = config.App{Name: name}
 		}
 		ref, err := Read(root, app)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		repo, tag := ParseRef(ref)
-		if _, ok := version(repo, tag); !ok {
-			errs = append(errs, rule("%s: '%s' is not pinned to a release tag", app, ref))
+		if err := verifyRef(cfg, app, configured, ref); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for _, app := range cfg.Apps {
+		if !seen[app.Name] {
+			errs = append(errs, rule("%s not found for app %s in cutship.yaml", Path(app), app.Name))
 		}
 	}
 	return errs
+}
+
+func verifyRef(cfg config.Config, app config.App, configured bool, ref string) error {
+	repo, tag := ParseRef(ref)
+	if configured {
+		if repo != app.Image {
+			return rule("%s: '%s' is not the image %s from cutship.yaml", app.Name, ref, app.Image)
+		}
+		if _, ok := releaseVersion(cfg.Release, tag); !ok {
+			return rule("%s: '%s' is not pinned to a release tag %s", app.Name, ref, cfg.Release.Tag("{version}"))
+		}
+		return nil
+	}
+	if owner, ok := ownApp(cfg, repo); ok {
+		return rule("%s: pins '%s', the image of app %s", app.Name, ref, owner.Name)
+	}
+	if _, ok := foreignVersion(tag); !ok {
+		return rule("%s: '%s' is not pinned to an exact tag other than latest", app.Name, ref)
+	}
+	return nil
 }

@@ -12,11 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/event"
 	"github.com/ambrdk/cutship/github"
 )
 
 const repo = "ambrdk/ansible"
+
+var ambrdk = config.Release{TagFormat: "v{version}", BumpBranchPrefix: "bump/", BumpTitle: "chore(apps): bump {app} to {tag}"}
 
 type fakeGitHub struct {
 	files    map[string]string
@@ -115,7 +118,7 @@ func TestParsePullRequest(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := Parse(context.Background(), api, repo, "pull_request", []byte(tc.payload))
+			got, err := Parse(context.Background(), api, ambrdk, repo, "pull_request", []byte(tc.payload))
 			if err != nil || len(got) != 1 {
 				t.Fatalf("got %+v err %v", got, err)
 			}
@@ -131,11 +134,11 @@ func TestParsePullRequest(t *testing.T) {
 			}
 		})
 	}
-	got, err := Parse(context.Background(), api, repo, "pull_request", []byte(prJSON("opened", false, "fix/env")))
+	got, err := Parse(context.Background(), api, ambrdk, repo, "pull_request", []byte(prJSON("opened", false, "fix/env")))
 	if err != nil || len(got) != 0 {
 		t.Fatalf("non bump %+v err %v", got, err)
 	}
-	got, err = Parse(context.Background(), api, repo, "pull_request", []byte(prJSON("opened", false, "bump/notes")))
+	got, err = Parse(context.Background(), api, ambrdk, repo, "pull_request", []byte(prJSON("opened", false, "bump/notes")))
 	if err != nil || len(got) != 0 {
 		t.Fatalf("bump prefix without version %+v err %v", got, err)
 	}
@@ -143,7 +146,7 @@ func TestParsePullRequest(t *testing.T) {
 
 func TestPullRequestToFromBranch(t *testing.T) {
 	f := &fakeGitHub{files: map[string]string{"b1:apps/alert-relay/app.yml": image("v0.2.2"), "h1:apps/alert-relay/app.yml": image("v0.2.4")}}
-	got, err := Parse(context.Background(), f.server(t), repo, "pull_request", []byte(prJSON("opened", false, "bump/alert-relay-v0.2.3")))
+	got, err := Parse(context.Background(), f.server(t), ambrdk, repo, "pull_request", []byte(prJSON("opened", false, "bump/alert-relay-v0.2.3")))
 	if err != nil || len(got) != 1 {
 		t.Fatalf("got %+v err %v", got, err)
 	}
@@ -161,7 +164,7 @@ func runJSON(name, action, ev, conclusion string, id int64, attempt int, prs str
 func TestParseCIRun(t *testing.T) {
 	api := (&fakeGitHub{}).server(t)
 	prs := `[{"number":12,"head":{"ref":"bump/alert-relay-v0.2.3","sha":"h1"}}]`
-	got, err := Parse(context.Background(), api, repo, "workflow_run", []byte(runJSON("ci", "completed", "pull_request", "success", 5, 1, prs)))
+	got, err := Parse(context.Background(), api, ambrdk, repo, "workflow_run", []byte(runJSON("ci", "completed", "pull_request", "success", 5, 1, prs)))
 	if err != nil || len(got) != 1 || got[0].PR != 12 || got[0].Event.Kind != event.ChecksFinished || got[0].Event.Result != event.Success || got[0].Event.ID != "ci:5:1" {
 		t.Fatalf("got %+v err %v", got, err)
 	}
@@ -170,7 +173,7 @@ func TestParseCIRun(t *testing.T) {
 		runJSON("ci", "completed", "pull_request", "success", 7, 1, `[{"number":9,"head":{"ref":"fix/env","sha":"h9"}}]`),
 		runJSON("ci", "requested", "pull_request", "", 8, 1, prs),
 	} {
-		got, err := Parse(context.Background(), api, repo, "workflow_run", []byte(payload))
+		got, err := Parse(context.Background(), api, ambrdk, repo, "workflow_run", []byte(payload))
 		if err != nil || len(got) != 0 {
 			t.Fatalf("ignored payload gave %+v err %v", got, err)
 		}
@@ -211,7 +214,7 @@ func TestParseDeployRun(t *testing.T) {
 	api := f.server(t)
 	parse := func(payload string) []Anchored {
 		t.Helper()
-		got, err := Parse(context.Background(), api, repo, "workflow_run", []byte(payload))
+		got, err := Parse(context.Background(), api, ambrdk, repo, "workflow_run", []byte(payload))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -289,7 +292,7 @@ func TestParseDeployEdgeRuns(t *testing.T) {
 	api := f.server(t)
 	parse := func(payload string) []Anchored {
 		t.Helper()
-		got, err := Parse(context.Background(), api, repo, "workflow_run", []byte(payload))
+		got, err := Parse(context.Background(), api, ambrdk, repo, "workflow_run", []byte(payload))
 		if err != nil {
 			t.Fatal(err)
 		}

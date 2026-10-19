@@ -6,9 +6,22 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ambrdk/cutship/config"
 )
 
-const own = "ghcr.io/ambrdk/alert-relay"
+const (
+	own   = "ghcr.io/ambrdk/alert-relay"
+	other = "ghcr.io/ambrdk/api"
+)
+
+var (
+	rel      = config.Release{TagFormat: "v{version}"}
+	plain    = config.Release{TagFormat: "{version}"}
+	relayApp = config.App{Name: "alert-relay", Image: own, Pin: config.Pin{Preset: "ansible"}}
+	apiApp   = config.App{Name: "api", Image: other, Pin: config.Pin{Preset: "ansible"}}
+	cfg      = config.Config{Apps: []config.App{relayApp, apiApp}, Release: rel}
+)
 
 func appYML(ref string) string {
 	return "---\nimage: " + ref + "\nhealth_url: \"http://127.0.0.1:9095/healthz\"\nvolumes:\n  - alert-relay-data\n"
@@ -52,7 +65,7 @@ func TestRead(t *testing.T) {
 	}
 	for body, want := range cases {
 		root := repo(t, map[string]string{"alert-relay": body})
-		got, err := Read(root, "alert-relay")
+		got, err := Read(root, relayApp)
 		if want == "" {
 			if !errors.Is(err, ErrRule) {
 				t.Errorf("%q: got %q err %v", body, got, err)
@@ -63,7 +76,7 @@ func TestRead(t *testing.T) {
 			t.Errorf("%q: got %q err %v", body, got, err)
 		}
 	}
-	if _, err := Read(t.TempDir(), "alert-relay"); !errors.Is(err, ErrRule) {
+	if _, err := Read(t.TempDir(), relayApp); !errors.Is(err, ErrRule) {
 		t.Errorf("missing file: %v", err)
 	}
 }
@@ -77,12 +90,13 @@ func TestLine(t *testing.T) {
 	}
 }
 
-func check(t *testing.T, current, image, tag string) (bool, error) {
-	t.Helper()
-	return Check(current, image, tag)
+func TestPath(t *testing.T) {
+	if got := Path(relayApp); got != "apps/alert-relay/app.yml" {
+		t.Errorf("Path = %q", got)
+	}
 }
 
-func TestCheckOwn(t *testing.T) {
+func TestCheck(t *testing.T) {
 	ok := []struct {
 		current, tag string
 		bump         bool
@@ -92,47 +106,41 @@ func TestCheckOwn(t *testing.T) {
 		{own + ":v0.2.4", "v0.2.4", false},
 	}
 	for _, tc := range ok {
-		if bump, err := check(t, tc.current, own, tc.tag); err != nil || bump != tc.bump {
+		if bump, err := Check(relayApp, rel, tc.current, tc.tag); err != nil || bump != tc.bump {
 			t.Errorf("%s → %s: bump %v err %v", tc.current, tc.tag, bump, err)
 		}
 	}
-	bad := []struct{ current, image, tag, text string }{
-		{own + ":v0.2.5", own, "v0.2.4", "lower than"},
-		{own + ":v0.2.3", own, "v1.2", "tag format"},
-		{own + ":latest", own, "v0.3.0", "current tag"},
-		{own, own, "v0.3.0", "current tag"},
-		{"ghcr.io/other/alert-relay:v0.2.3", own, "v0.3.0", "image mismatch"},
+	bad := []struct{ current, tag, text string }{
+		{own + ":v0.2.5", "v0.2.4", "lower than"},
+		{own + ":v0.2.3", "v1.2", "tag format"},
+		{own + ":v0.2.3", "0.2.4", "tag format"},
+		{own + ":v0.2.3", "v0.2.4-rc.1", "tag format"},
+		{own + ":v0.2.3", "latest", "tag format"},
+		{own + ":latest", "v0.3.0", "current tag"},
+		{own, "v0.3.0", "current tag"},
+		{"ghcr.io/other/alert-relay:v0.2.3", "v0.3.0", "image mismatch"},
 	}
 	for _, tc := range bad {
-		_, err := check(t, tc.current, tc.image, tc.tag)
+		_, err := Check(relayApp, rel, tc.current, tc.tag)
 		if !errors.Is(err, ErrRule) || !strings.Contains(err.Error(), tc.text) {
 			t.Errorf("%s → %s: err %v, want %q", tc.current, tc.tag, err, tc.text)
 		}
 	}
 }
 
-func TestCheckForeign(t *testing.T) {
-	if bump, err := check(t, "valkey/valkey:9.1.1", "valkey/valkey", "9.1.2"); err != nil || !bump {
-		t.Errorf("upgrade: %v %v", bump, err)
+func TestCheckPlainFormat(t *testing.T) {
+	if bump, err := Check(relayApp, plain, own+":1.2.3", "1.2.4"); err != nil || !bump {
+		t.Errorf("plain bump: %v %v", bump, err)
 	}
-	if bump, err := check(t, "valkey/valkey:9.1.2", "valkey/valkey", "9.1.2"); err != nil || bump {
-		t.Errorf("same: %v %v", bump, err)
-	}
-	if _, err := check(t, "valkey/valkey:9.1.2", "valkey/valkey", "9.1.1"); err == nil || !strings.Contains(err.Error(), "lower than") {
-		t.Errorf("downgrade: %v", err)
-	}
-	if _, err := check(t, "valkey/valkey:9.1.2", "valkey/valkey", "latest"); err == nil || !strings.Contains(err.Error(), "tag format") {
-		t.Errorf("latest: %v", err)
-	}
-	if bump, err := check(t, "x/y:stable-a", "x/y", "stable-b"); err != nil || !bump {
-		t.Errorf("no number: %v %v", bump, err)
+	if _, err := Check(relayApp, plain, own+":1.2.3", "v1.2.4"); !errors.Is(err, ErrRule) || !strings.Contains(err.Error(), "{version}") {
+		t.Errorf("v tag in plain format: %v", err)
 	}
 }
 
 func TestSetKeepsQuotes(t *testing.T) {
 	body := appYML(`"` + own + `:v0.2.3"`)
 	root := repo(t, map[string]string{"alert-relay": body})
-	if err := Set(root, "alert-relay", own, "v0.2.4"); err != nil {
+	if err := Set(root, relayApp, rel, "v0.2.4"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(filepath.Join(root, "apps", "alert-relay", "app.yml"))
@@ -144,7 +152,7 @@ func TestSetKeepsQuotes(t *testing.T) {
 func TestSetKeepsCRLFAndNoFinalNewline(t *testing.T) {
 	body := "---\r\nimage: " + own + ":v0.2.3\r\nhealth_url: x\r\nvolumes: []"
 	root := repo(t, map[string]string{"alert-relay": body})
-	if err := Set(root, "alert-relay", own, "v0.2.4"); err != nil {
+	if err := Set(root, relayApp, rel, "v0.2.4"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(filepath.Join(root, "apps", "alert-relay", "app.yml"))
@@ -153,17 +161,29 @@ func TestSetKeepsCRLFAndNoFinalNewline(t *testing.T) {
 	}
 }
 
+func TestSetWritesTheConfiguredImage(t *testing.T) {
+	root := repo(t, map[string]string{"alert-relay": appYML("ghcr.io/old/alert-relay:v0.2.3")})
+	if err := Set(root, relayApp, rel, "v0.2.4"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := Read(root, relayApp); got != own+":v0.2.4" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestSetRefusesTwoImageLines(t *testing.T) {
 	root := repo(t, map[string]string{"alert-relay": "---\nimage: " + own + ":v0.2.3\nimage: " + own + ":v0.2.3\n"})
-	if err := Set(root, "alert-relay", own, "v0.2.4"); !errors.Is(err, ErrRule) {
+	if err := Set(root, relayApp, rel, "v0.2.4"); !errors.Is(err, ErrRule) {
 		t.Fatalf("err %v", err)
 	}
 }
 
 func TestSetRejectsBadTag(t *testing.T) {
 	root := repo(t, map[string]string{"alert-relay": appYML(own + ":v0.2.3")})
-	if err := Set(root, "alert-relay", own, "latest"); !errors.Is(err, ErrRule) {
-		t.Fatalf("err %v", err)
+	for _, tag := range []string{"latest", "0.2.4", "v0.2"} {
+		if err := Set(root, relayApp, rel, tag); !errors.Is(err, ErrRule) {
+			t.Fatalf("%s: err %v", tag, err)
+		}
 	}
 }
 
@@ -177,6 +197,9 @@ func appFile(old, new string) File {
 
 func TestImageOnly(t *testing.T) {
 	env := File{Filename: "apps/alert-relay/env.j2", Status: "modified", Patch: "+X=1"}
+	cache := func(old, new string) File {
+		return File{Filename: "apps/cache/app.yml", Status: "modified", Patch: patch(old, new, "")}
+	}
 	cases := []struct {
 		name  string
 		files []File
@@ -188,14 +211,16 @@ func TestImageOnly(t *testing.T) {
 		{"image and field", []File{{Filename: "apps/alert-relay/app.yml", Status: "modified", Patch: patch(own+":v0.2.3", own+":v0.2.4", "\n-volumes: []\n+volumes: [x]")}}, false},
 		{"two files", []File{appFile(own+":v0.2.3", own+":v0.2.4"), env}, false},
 		{"other repo", []File{appFile(own+":v0.2.3", "docker.io/x/alert-relay:v0.2.4")}, false},
-		{"foreign upgrade", []File{appFile("valkey/valkey:9.1.1", "valkey/valkey:9.1.2")}, true},
-		{"foreign downgrade", []File{appFile("valkey/valkey:9.1.2", "valkey/valkey:9.1.1")}, false},
-		{"foreign suffix upgrade", []File{appFile("grafana/grafana:11.3.0-ubuntu", "grafana/grafana:11.4.0-ubuntu")}, true},
-		{"foreign suffix flip", []File{appFile("grafana/grafana:11.3.0-ubuntu", "grafana/grafana:11.3.0-alpine")}, false},
-		{"foreign suffix down", []File{appFile("grafana/grafana:11.4.0", "grafana/grafana:11.3.0-ubuntu")}, false},
-		{"no number", []File{appFile("x/y:stable-a", "x/y:stable-b")}, false},
-		{"number to word", []File{appFile("valkey/valkey:9.1.2", "valkey/valkey:alpine")}, false},
-		{"own not semver", []File{appFile(own+":v0.2.3", own+":0.2.4")}, false},
+		{"own image of another app", []File{appFile(other+":v0.2.3", other+":v0.2.4")}, false},
+		{"foreign upgrade", []File{cache("valkey/valkey:9.1.1", "valkey/valkey:9.1.2")}, true},
+		{"foreign downgrade", []File{cache("valkey/valkey:9.1.2", "valkey/valkey:9.1.1")}, false},
+		{"foreign suffix upgrade", []File{cache("grafana/grafana:11.3.0-ubuntu", "grafana/grafana:11.4.0-ubuntu")}, true},
+		{"foreign suffix flip", []File{cache("grafana/grafana:11.3.0-ubuntu", "grafana/grafana:11.3.0-alpine")}, false},
+		{"foreign suffix down", []File{cache("grafana/grafana:11.4.0", "grafana/grafana:11.3.0-ubuntu")}, false},
+		{"no number", []File{cache("x/y:stable-a", "x/y:stable-b")}, false},
+		{"number to word", []File{cache("valkey/valkey:9.1.2", "valkey/valkey:alpine")}, false},
+		{"own not in format", []File{appFile(own+":v0.2.3", own+":0.2.4")}, false},
+		{"own prerelease", []File{appFile(own+":v0.2.3", own+":v0.2.4-rc.1")}, false},
 		{"own downgrade", []File{appFile(own+":v0.2.4", own+":v0.2.3")}, false},
 		{"latest", []File{appFile(own+":v0.2.3", own+":latest")}, false},
 		{"added", []File{{Filename: "apps/alert-relay/app.yml", Status: "added", Patch: patch(own+":v0.2.3", own+":v0.2.4", "")}}, false},
@@ -204,33 +229,68 @@ func TestImageOnly(t *testing.T) {
 		{"empty", nil, false},
 	}
 	for _, tc := range cases {
-		if got := ImageOnly(tc.files); got != tc.fast {
+		if got := ImageOnly(cfg, tc.files); got != tc.fast {
 			t.Errorf("%s: got %v", tc.name, got)
 		}
+	}
+}
+
+func TestImageOnlyPlainFormat(t *testing.T) {
+	plainCfg := config.Config{Apps: []config.App{relayApp}, Release: plain}
+	if !ImageOnly(plainCfg, []File{appFile(own+":1.2.3", own+":1.2.4")}) {
+		t.Error("plain bump not fast")
+	}
+	if ImageOnly(plainCfg, []File{appFile(own+":1.2.3", own+":v1.2.4")}) {
+		t.Error("v tag fast in plain format")
 	}
 }
 
 func TestVerify(t *testing.T) {
 	root := repo(t, map[string]string{
 		"alert-relay": appYML(own + ":v0.3.0"),
+		"api":         appYML("ghcr.io/elsewhere/api:v1.0.0"),
 		"cache":       appYML("valkey/valkey:9.1.2"),
-		"loose":       appYML(own + ":latest"),
+		"loose":       appYML("valkey/valkey:latest"),
 		"noimage":     "---\nhealth_url: x\n",
 		"Bad_Name":    appYML("x/y:1.0.0"),
 	})
-	errs := Verify(root)
+	errs := Verify(root, cfg)
 	var text []string
 	for _, err := range errs {
 		text = append(text, err.Error())
 	}
 	joined := strings.Join(text, "\n")
-	if len(errs) != 3 || !strings.Contains(joined, "loose") || !strings.Contains(joined, "noimage") || !strings.Contains(joined, "Bad_Name") {
+	if len(errs) != 4 {
 		t.Fatalf("errors:\n%s", joined)
+	}
+	for _, want := range []string{"loose", "noimage", "Bad_Name", "api"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("errors do not mention %s:\n%s", want, joined)
+		}
+	}
+}
+
+func TestVerifyOwnTagFormat(t *testing.T) {
+	root := repo(t, map[string]string{
+		"alert-relay": appYML(own + ":0.3.0"),
+		"api":         appYML(other + ":v1.0.0"),
+	})
+	errs := Verify(root, cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "alert-relay") {
+		t.Fatalf("errors %v", errs)
+	}
+}
+
+func TestVerifyMissingConfiguredApp(t *testing.T) {
+	root := repo(t, map[string]string{"alert-relay": appYML(own + ":v0.3.0")})
+	errs := Verify(root, cfg)
+	if len(errs) != 1 || !errors.Is(errs[0], ErrRule) || !strings.Contains(errs[0].Error(), "apps/api/app.yml") {
+		t.Fatalf("errors %v", errs)
 	}
 }
 
 func TestVerifyWithoutApps(t *testing.T) {
-	if errs := Verify(t.TempDir()); len(errs) != 1 || !errors.Is(errs[0], ErrRule) || !strings.Contains(errs[0].Error(), "no apps") {
+	if errs := Verify(t.TempDir(), config.Config{Release: rel}); len(errs) != 1 || !errors.Is(errs[0], ErrRule) || !strings.Contains(errs[0].Error(), "no apps") {
 		t.Fatalf("errors %v", errs)
 	}
 }

@@ -2,60 +2,71 @@ package bump
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
+	"strings"
 
+	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/pin"
 )
 
-var (
-	branch = regexp.MustCompile(`^bump/([a-z0-9][a-z0-9-]*)-(v\d+\.\d+\.\d+)$`)
-	semver = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)$`)
-)
-
-func Name(app, tag string) (string, string, error) {
-	if !pin.ValidApp(app) || !semver.MatchString(tag) {
-		return "", "", fmt.Errorf("bump name: app '%s' must be a valid app name and tag '%s' must be vMAJOR.MINOR.PATCH: %w", app, tag, pin.ErrRule)
+func Name(rel config.Release, app, tag string) (string, string, error) {
+	if !pin.ValidApp(app) {
+		return "", "", fmt.Errorf("bump name: app '%s' must be a valid app name: %w", app, pin.ErrRule)
 	}
-	return "bump/" + app + "-" + tag, "chore(apps): bump " + app + " to " + tag, nil
+	if _, ok := rel.Version(tag); !ok {
+		return "", "", fmt.Errorf("bump name: tag '%s' must be %s with MAJOR.MINOR.PATCH: %w", tag, rel.Tag("{version}"), pin.ErrRule)
+	}
+	title := strings.NewReplacer("{app}", app, "{tag}", tag).Replace(rel.BumpTitle)
+	return rel.BumpBranchPrefix + app + "-" + tag, title, nil
 }
 
-func Parse(ref string) (string, string, bool) {
-	m := branch.FindStringSubmatch(ref)
-	if m == nil {
+func Parse(rel config.Release, ref string) (string, string, bool) {
+	rest, ok := strings.CutPrefix(ref, rel.BumpBranchPrefix)
+	if !ok || rel.BumpBranchPrefix == "" {
 		return "", "", false
 	}
-	return m[1], m[2], true
+	for i := strings.Index(rest, "-"); i >= 0; {
+		app, tag := rest[:i], rest[i+1:]
+		if _, ok := rel.Version(tag); ok && pin.ValidApp(app) {
+			return app, tag, true
+		}
+		next := strings.Index(rest[i+1:], "-")
+		if next < 0 {
+			break
+		}
+		i += next + 1
+	}
+	return "", "", false
 }
 
-func Superseded(app, tag string, branches []string) []string {
-	current, ok := numbers(tag)
+func Superseded(rel config.Release, app, tag string, branches []string) []string {
+	current, ok := numbers(rel, tag)
 	if !ok {
 		return nil
 	}
 	var out []string
 	for _, b := range branches {
-		other, version, ok := Parse(b)
+		other, version, ok := Parse(rel, b)
 		if !ok || other != app {
 			continue
 		}
-		if v, _ := numbers(version); less(v, current) {
+		if v, _ := numbers(rel, version); less(v, current) {
 			out = append(out, b)
 		}
 	}
 	return out
 }
 
-func numbers(tag string) ([3]int, bool) {
-	m := semver.FindStringSubmatch(tag)
-	if m == nil {
+func numbers(rel config.Release, tag string) ([3]int, bool) {
+	v, ok := rel.Version(tag)
+	if !ok {
 		return [3]int{}, false
 	}
-	var v [3]int
-	for i := range v {
-		v[i], _ = strconv.Atoi(m[i+1])
+	var n [3]int
+	for i, part := range strings.Split(v, ".") {
+		n[i], _ = strconv.Atoi(part)
 	}
-	return v, true
+	return n, true
 }
 
 func less(a, b [3]int) bool {

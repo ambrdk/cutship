@@ -36,6 +36,7 @@ func gateCommand(args []string, stdout, stderr io.Writer) int {
 	}
 	fs := flag.NewFlagSet("gate "+args[0], flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	path := fs.String("config", "cutship.yaml", "")
 	pullsPath := fs.String("pulls", "", "")
 	checksPath := fs.String("checks", "", "")
 	pending := fs.String("pending", "", "")
@@ -45,12 +46,16 @@ func gateCommand(args []string, stdout, stderr io.Writer) int {
 	if args[0] == "skip" && (*checksPath == "" || *pending == "") {
 		return usageError(stderr)
 	}
+	cfg, ok := loadConfig(*path, stderr)
+	if !ok {
+		return 1
+	}
 	var pulls []gate.Pull
 	if err := readJSON(*pullsPath, &pulls); err != nil {
 		return fail(stderr, err)
 	}
 	if args[0] == "head" {
-		_, _ = fmt.Fprintln(stdout, gate.Head(pulls))
+		_, _ = fmt.Fprintln(stdout, gate.Head(cfg.Release, pulls))
 		return 0
 	}
 	var pages []struct {
@@ -63,6 +68,6 @@ func gateCommand(args []string, stdout, stderr io.Writer) int {
 	for _, p := range pages {
 		runs = append(runs, p.CheckRuns...)
 	}
-	_, _ = fmt.Fprintln(stdout, gate.Skip(pulls, runs, parsePending(*pending)))
+	_, _ = fmt.Fprintln(stdout, gate.Skip(cfg.Release, cfg.Lanes, pulls, runs, parsePending(*pending)))
 	return 0
 }

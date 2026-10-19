@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/github"
 	"github.com/ambrdk/cutship/notify"
 	"github.com/ambrdk/cutship/source"
@@ -22,12 +23,20 @@ import (
 
 const copyWait = 30 * time.Second
 
-func notifyCommand(stderr io.Writer) int {
+func notifyCommand(args []string, stderr io.Writer) int {
+	path, rest, err := configFlags("notify", args)
+	if err != nil || len(rest) != 0 {
+		return usageError(stderr)
+	}
+	rel, ok := releaseConfig(path, stderr)
+	if !ok {
+		return 1
+	}
 	log := slog.New(slog.NewTextHandler(stderr, nil))
 	slog.SetDefault(log)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := runNotify(ctx, log); err != nil {
+	if err := runNotify(ctx, log, rel); err != nil {
 		log.Error("cutship notify failed", "error", err)
 		return 1
 	}
@@ -41,7 +50,7 @@ func env(key, fallback string) string {
 	return fallback
 }
 
-func runNotify(ctx context.Context, log *slog.Logger) error {
+func runNotify(ctx context.Context, log *slog.Logger, rel config.Release) error {
 	repo, eventName, eventPath := os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_EVENT_NAME"), os.Getenv("GITHUB_EVENT_PATH")
 	token, channel, ghToken := os.Getenv("TELEGRAM_BOT_TOKEN"), os.Getenv("TELEGRAM_CHANNEL_ID"), os.Getenv("GITHUB_TOKEN")
 	if repo == "" || eventName == "" || eventPath == "" || token == "" || channel == "" || ghToken == "" {
@@ -52,7 +61,7 @@ func runNotify(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 	api := github.New(env("GITHUB_API_URL", "https://api.github.com"), ghToken)
-	events, err := source.Parse(ctx, api, repo, eventName, payload)
+	events, err := source.Parse(ctx, api, rel, repo, eventName, payload)
 	if err != nil {
 		return err
 	}

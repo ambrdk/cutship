@@ -13,8 +13,8 @@ This repository used to be `deploy-notify`; `cutship notify` is that tool.
 | `cutship version next [--config cutship.yaml] --app <app> [--dir .]` | prints the next release tag from conventional commits since the last one, nothing when there is no release; needs the full history |
 | `cutship notify` | keeps one Telegram post per release in sync with GitHub, see below |
 | `cutship pin read [--root dir] <app>` | prints the image pinned in `apps/<app>/app.yml` |
-| `cutship pin check [--root dir] <app> <image> <tag>` | prints `bump` or `same`, fails when the tag breaks the rule |
-| `cutship pin set [--root dir] <app> <image> <tag>` | changes only the `image` line, keeps every other byte |
+| `cutship pin check [--root dir] <app> <tag>` | prints `bump` or `same`, fails when the tag breaks the rule |
+| `cutship pin set [--root dir] <app> <tag>` | changes only the `image` line to the app's image and tag, keeps every other byte |
 | `cutship pin verify [--root dir]` | checks every app pin against the tag rule |
 | `cutship lane < files.json` | prints `fast` or `full` for the files of a pull request |
 | `cutship bump name <app> <tag>` | prints `branch=` and `title=` of the bump pull request |
@@ -22,6 +22,8 @@ This repository used to be `deploy-notify`; `cutship notify` is that tool.
 | `cutship bump superseded <app> <tag> < branches` | prints the open bump branches of the app with a lower version |
 | `cutship gate head --pulls <file>` | prints the head sha of the merged bump pull request |
 | `cutship gate skip --pulls <file> --checks <file> --pending <json\|unknown>` | prints `true` when the deploy can skip its CI run |
+
+Every command except `schema` reads `cutship.yaml` from the current directory, or the file given with `--config`. Its own images, tag format, bump branch prefix and required check come from there.
 
 Output is plain values on stdout, one per line, so a step can write it to `$GITHUB_OUTPUT`. A broken rule prints `::error::<reason>` on stderr and exits 1; wrong arguments exit 2. The commands, their output and the exit codes are a versioned interface: an incompatible change needs a new major version.
 
@@ -31,7 +33,7 @@ The rules are written down in `CONTEXT.md` here and in the deploy repository.
 
 ```yaml
 - uses: ambrdk/cutship/setup@<sha> # vX.Y.Z
-- run: cutship pin check alert-relay ghcr.io/ambrdk/alert-relay "$TAG"
+- run: cutship pin check alert-relay "$TAG"
 ```
 
 `setup` puts the binary on `PATH`. Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `cutship_linux_amd64`; setup finds the newest version tag on the commit it is pinned to (a SHA, a version tag or `v1`) and downloads that binary in a few seconds. Pinned to a branch or a commit without a release, it builds from source. The `version` input installs a given release instead of the pinned one and fails the job when that release cannot be downloaded, so a pipeline never runs a different cutship than it asked for. The `version` output says what was installed.

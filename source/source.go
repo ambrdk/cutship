@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ambrdk/cutship/bump"
+	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/event"
 	"github.com/ambrdk/cutship/github"
 	"github.com/ambrdk/cutship/pin"
@@ -60,11 +61,12 @@ type runPayload struct {
 
 type parser struct {
 	api  *github.API
+	rel  config.Release
 	repo string
 }
 
-func Parse(ctx context.Context, api *github.API, repo, eventName string, payload []byte) ([]Anchored, error) {
-	p := parser{api: api, repo: repo}
+func Parse(ctx context.Context, api *github.API, rel config.Release, repo, eventName string, payload []byte) ([]Anchored, error) {
+	p := parser{api: api, rel: rel, repo: repo}
 	switch eventName {
 	case "pull_request":
 		var pl prPayload
@@ -89,7 +91,7 @@ func Parse(ctx context.Context, api *github.API, repo, eventName string, payload
 
 func (p parser) pullRequest(ctx context.Context, pl prPayload) ([]Anchored, error) {
 	pr := pl.PullRequest
-	app, tag, ok := bump.Parse(pr.Head.Ref)
+	app, tag, ok := bump.Parse(p.rel, pr.Head.Ref)
 	if !ok {
 		return nil, nil
 	}
@@ -129,7 +131,7 @@ func (p parser) ci(pl runPayload) []Anchored {
 		return nil
 	}
 	pr := run.PullRequests[0]
-	if _, _, ok := bump.Parse(pr.Head.Ref); !ok {
+	if _, _, ok := bump.Parse(p.rel, pr.Head.Ref); !ok {
 		return nil
 	}
 	result := event.Failure
@@ -245,7 +247,7 @@ func (p parser) commitAnchor(ctx context.Context, trigger, sha string) (Anchored
 			continue
 		}
 		e := event.Event{PR: pr.Number, PRURL: pr.HTMLURL, Title: pr.Title}
-		if app, _, ok := bump.Parse(pr.Head.Ref); ok {
+		if app, _, ok := bump.Parse(p.rel, pr.Head.Ref); ok {
 			e.App = app
 			if e.Image, e.To, err = p.image(ctx, app, sha); err != nil {
 				return Anchored{}, err
@@ -276,7 +278,7 @@ func (p parser) appAnchor(ctx context.Context, trigger string, commit Anchored, 
 			}
 		}
 	}
-	if branch, _, err := bump.Name(app, tag); err == nil {
+	if branch, _, err := bump.Name(p.rel, app, tag); err == nil {
 		owner, _, _ := strings.Cut(p.repo, "/")
 		pulls, err := p.api.PullsByHead(ctx, p.repo, owner+":"+branch)
 		if err != nil {

@@ -8,16 +8,16 @@ import (
 
 const usage = `usage: cutship <command> [arguments]
 
+Every command except schema reads cutship.yaml, or the file given with --config.
+
 commands:
-  validate [--config cutship.yaml]         check cutship.yaml
+  validate                                 check cutship.yaml
   schema                                   print the JSON Schema of cutship.yaml
-  version next [--config cutship.yaml] --app <app> [--dir .]
-                                           print the next release tag, nothing when there is none
+  version next --app <app> [--dir .]       print the next release tag, nothing when there is none
   notify                                   post release and deploy events to Telegram
   pin read [--root dir] <app>              print the pinned image of an app
-  pin check [--root dir] <app> <image> <tag>
-                                           print bump or same for a release tag
-  pin set [--root dir] <app> <image> <tag> pin an app to a release tag
+  pin check [--root dir] <app> <tag>       print bump or same for a release tag
+  pin set [--root dir] <app> <tag>         pin an app to a release tag
   pin verify [--root dir]                  check every app pin against the tag rule
   lane < files.json                        print fast or full for a pull request
   bump name <app> <tag>                    print branch= and title= of a bump pull request
@@ -44,10 +44,7 @@ func dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "version":
 		return versionCommand(args[1:], stdout, stderr)
 	case "notify":
-		if len(args) != 1 {
-			return usageError(stderr)
-		}
-		return notifyCommand(stderr)
+		return notifyCommand(args[1:], stderr)
 	case "pin":
 		return pinCommand(args[1:], stdout, stderr)
 	case "lane":
