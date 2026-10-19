@@ -119,28 +119,15 @@ func Release(ctx context.Context, service, deploy forge.Forge, reg registry.Regi
 	if err != nil {
 		return Result{}, err
 	}
-	open, err := deploy.OpenChanges(ctx, in.DeployRepo, rel.BumpBranchPrefix)
+	b := bumps{deploy: deploy, repo: in.DeployRepo, rel: rel, app: app.Name, tag: in.Tag, branch: branchName}
+	higher, warnings, err := b.settle(ctx)
+	res.Warnings = append(res.Warnings, warnings...)
 	if err != nil {
 		return Result{}, err
 	}
-	for _, ch := range open {
-		other, tag, ok := bump.Parse(rel, ch.HeadRef)
-		if !ok || other != app.Name || ch.HeadRef == branchName {
-			continue
-		}
-		if len(bump.Superseded(rel, app.Name, tag, []string{branchName})) > 0 {
-			res.Outcome, res.Change = Superseded, ch
-			return res, nil
-		}
-	}
-	for _, ch := range open {
-		other, tag, ok := bump.Parse(rel, ch.HeadRef)
-		if !ok || other != app.Name || len(bump.Superseded(rel, app.Name, in.Tag, []string{ch.HeadRef})) == 0 {
-			continue
-		}
-		if err := deploy.CloseChange(ctx, in.DeployRepo, ch.Number, true); err != nil {
-			res.Warnings = append(res.Warnings, fmt.Sprintf("close superseded bump %s (#%d): %v", tag, ch.Number, err))
-		}
+	if higher != nil {
+		res.Outcome, res.Change = Superseded, *higher
+		return res, nil
 	}
 	if !needed {
 		res.Outcome = Same
@@ -160,10 +147,17 @@ func Release(ctx context.Context, service, deploy forge.Forge, reg registry.Regi
 	if err != nil {
 		return Result{}, fmt.Errorf("push %s to %s: %w", branchName, in.DeployRepo, err)
 	}
-	if am, ok := deploy.(forge.AutoMerger); ok {
-		if err := am.AutoMerge(ctx, in.DeployRepo, ch.Number); err != nil {
-			return Result{}, err
+	higher, warnings, err = b.settle(ctx)
+	res.Warnings = append(res.Warnings, warnings...)
+	if err != nil {
+		return Result{}, err
+	}
+	if higher != nil {
+		if err := deploy.CloseChange(ctx, in.DeployRepo, ch.Number, true); err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("close own bump #%d superseded by #%d: %v", ch.Number, higher.Number, err))
 		}
+		res.Outcome, res.Change = Superseded, *higher
+		return res, nil
 	}
 	_, from := pin.ParseRef(current)
 	e := event.Event{
@@ -185,6 +179,47 @@ func Release(ctx context.Context, service, deploy forge.Forge, reg registry.Regi
 	}); err != nil {
 		return Result{}, fmt.Errorf("save the release state on #%d: %w", ch.Number, err)
 	}
+	if am, ok := deploy.(forge.AutoMerger); ok {
+		if err := am.AutoMerge(ctx, in.DeployRepo, ch.Number); err != nil {
+			return Result{}, err
+		}
+	}
 	res.Outcome, res.Change = Bumped, ch
 	return res, nil
+}
+
+type bumps struct {
+	deploy forge.Forge
+	repo   string
+	rel    config.Release
+	app    string
+	tag    string
+	branch string
+}
+
+func (b bumps) settle(ctx context.Context) (*forge.Change, []string, error) {
+	open, err := b.deploy.OpenChanges(ctx, b.repo, b.rel.BumpBranchPrefix)
+	if err != nil {
+		return nil, nil, err
+	}
+	var warnings []string
+	for _, ch := range open {
+		other, tag, ok := bump.Parse(b.rel, ch.HeadRef)
+		if !ok || other != b.app || ch.HeadRef == b.branch {
+			continue
+		}
+		if len(bump.Superseded(b.rel, b.app, tag, []string{b.branch})) > 0 {
+			return &ch, warnings, nil
+		}
+	}
+	for _, ch := range open {
+		other, tag, ok := bump.Parse(b.rel, ch.HeadRef)
+		if !ok || other != b.app || len(bump.Superseded(b.rel, b.app, b.tag, []string{ch.HeadRef})) == 0 {
+			continue
+		}
+		if err := b.deploy.CloseChange(ctx, b.repo, ch.Number, true); err != nil {
+			warnings = append(warnings, fmt.Sprintf("close superseded bump %s (#%d): %v", tag, ch.Number, err))
+		}
+	}
+	return nil, warnings, nil
 }

@@ -233,6 +233,50 @@ func TestReleaseRejectsInput(t *testing.T) {
 	}
 }
 
+func TestReleaseStateBeforeAutoMerge(t *testing.T) {
+	w := setup(t, "v0.3.0")
+	w.dep.FailNext("AutoMerge", errors.New("unstable status"))
+	if _, err := w.run(); err == nil {
+		t.Fatal("auto-merge error swallowed")
+	}
+	changes := w.dep.Changes(deployRepo)
+	if len(changes) != 1 || len(w.dep.CommentsOf(deployRepo, changes[0].Number)) != 1 {
+		t.Fatalf("state missing after the auto-merge failure: %+v", changes)
+	}
+}
+
+func TestReleaseConcurrentHigherBump(t *testing.T) {
+	w := setup(t, "v0.3.0")
+	w.dep.BeforePush(func() { w.dep.AddChange(deployRepo, forge.Change{HeadRef: "bump/alert-relay-v0.3.2"}) })
+	res, err := w.run()
+	if err != nil || res.Outcome != Superseded || res.Change.HeadRef != "bump/alert-relay-v0.3.2" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	for _, ch := range w.dep.Changes(deployRepo) {
+		want := forge.Open
+		if ch.HeadRef == "bump/alert-relay-v0.3.1" {
+			want = forge.Closed
+		}
+		if ch.State != want {
+			t.Errorf("%s is %s, want %s", ch.HeadRef, ch.State, want)
+		}
+	}
+}
+
+func TestReleaseConcurrentLowerBump(t *testing.T) {
+	w := setup(t, "v0.2.0")
+	w.dep.BeforePush(func() { w.dep.AddChange(deployRepo, forge.Change{HeadRef: "bump/alert-relay-v0.3.0"}) })
+	res, err := w.run()
+	if err != nil || res.Outcome != Bumped {
+		t.Fatalf("%+v %v", res, err)
+	}
+	for _, ch := range w.dep.Changes(deployRepo) {
+		if ch.HeadRef == "bump/alert-relay-v0.3.0" && ch.State != forge.Closed {
+			t.Errorf("lower bump left open: %+v", ch)
+		}
+	}
+}
+
 func TestReleaseRerunAfterEachStep(t *testing.T) {
 	for _, step := range []struct {
 		dep    bool
