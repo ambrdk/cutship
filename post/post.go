@@ -70,7 +70,7 @@ func Send(ctx context.Context, ns []notifier.Notifier, warn func(string), view r
 	refs := map[string]json.RawMessage{}
 	for _, n := range ns {
 		old := messages[n.Key()]
-		if !changed && n.Done(old) {
+		if !changed && (len(old) == 0 || n.Done(old)) {
 			continue
 		}
 		ref, status, err := n.Publish(ctx, old, view)
@@ -105,6 +105,9 @@ func (p *Publisher) Apply(ctx context.Context, t Target, events ...event.Event) 
 	})
 	if err != nil {
 		return state.Record{}, err
+	}
+	if fresh, ok, err := p.st.Load(ctx, t.Change, t.App); err == nil && ok {
+		rec = fresh
 	}
 	refs := Send(ctx, p.ns, p.warn, render.Build(rec.State), rec.Messages, changed)
 	if len(refs) == 0 {

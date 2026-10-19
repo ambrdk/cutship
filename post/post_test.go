@@ -135,6 +135,58 @@ func TestMigratedThreadIsEdited(t *testing.T) {
 	}
 }
 
+func TestApplyNoopDoesNotCreatePost(t *testing.T) {
+	w := setup(t)
+	silent := New(w.f, repo, nil, func(string) {})
+	if _, err := silent.Apply(ctx, w.target, ev("e1", event.ReleaseOpened, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.p.Apply(ctx, w.target, ev("e1", event.ReleaseOpened, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if w.n.Posts() != 0 {
+		t.Fatalf("a replayed event opened post %d while the first writer was still publishing", w.n.Posts())
+	}
+	if _, err := w.p.Apply(ctx, w.target, ev("e2", event.Merged, 1)); err != nil || w.n.Posts() != 1 {
+		t.Fatalf("posts %d %v", w.n.Posts(), err)
+	}
+}
+
+type racing struct {
+	*fake.Forge
+	hook func()
+}
+
+func (r *racing) UpdateComment(ctx context.Context, name string, id int64, body string) error {
+	err := r.Forge.UpdateComment(ctx, name, id, body)
+	if h := r.hook; h != nil {
+		r.hook = nil
+		h()
+	}
+	return err
+}
+
+func TestApplyPublishesTheLatestState(t *testing.T) {
+	w := setup(t)
+	if _, err := w.p.Apply(ctx, w.target, ev("e1", event.ReleaseOpened, 0)); err != nil {
+		t.Fatal(err)
+	}
+	other := New(w.f, repo, nil, func(string) {})
+	r := &racing{Forge: w.f, hook: func() {
+		if _, err := other.Apply(ctx, w.target, ev("e3", event.DeployStarted, 2)); err != nil {
+			t.Error(err)
+		}
+	}}
+	p := New(r, repo, []notifier.Notifier{w.n}, func(string) {})
+	if _, err := p.Apply(ctx, w.target, ev("e2", event.Merged, 1)); err != nil {
+		t.Fatal(err)
+	}
+	last := w.n.Views[len(w.n.Views)-1].State
+	if last.Stage != "deploying" {
+		t.Fatalf("published a stale view: %s %v", last.Stage, last.Seen)
+	}
+}
+
 func TestApplyWithoutNotifiers(t *testing.T) {
 	w := setup(t)
 	p := New(w.f, repo, nil, func(s string) { t.Errorf("warning %s", s) })
