@@ -1,0 +1,3 @@
+---
+image: ghcr.io/acme/api:v1.4.0
+health_url: "http://127.0.0.1:8080/healthz"

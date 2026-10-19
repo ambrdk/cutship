@@ -24,6 +24,14 @@ jobs:
       - run: bash scripts/pick_tag_test.sh
       - run: bash scripts/install_test.sh
       - run: shellcheck scripts/*.sh
+      - name: lint example workflows
+        run: |
+          for example in examples/github/deploy examples/github/service; do
+            copy="$RUNNER_TEMP/$(basename "$example")"
+            cp -R "$example" "$copy"
+            git -C "$copy" init -q
+            (cd "$copy" && go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
+          done
 
   snapshot:
     runs-on: ubuntu-24.04

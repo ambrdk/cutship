@@ -10,13 +10,17 @@ import (
 
 const SchemaID = "https://github.com/ambrdk/cutship/releases/latest/download/cutship.schema.json"
 
-func Schema() ([]byte, error) {
+func SchemaDocument() *jsonschema.Schema {
 	r := jsonschema.Reflector{DoNotReference: true, ExpandedStruct: true}
 	s := r.Reflect(&Config{})
 	s.ID = SchemaID
 	s.Title = "cutship.yaml"
 	s.Description = "Release cycle of the apps deployed from one deploy repository. Lives in the root of that repository."
-	data, err := json.MarshalIndent(s, "", "  ")
+	return s
+}
+
+func Schema() ([]byte, error) {
+	data, err := json.MarshalIndent(SchemaDocument(), "", "  ")
 	if err != nil {
 		return nil, err
 	}
