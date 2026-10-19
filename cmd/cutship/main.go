@@ -12,6 +12,7 @@ Most commands read cutship.yaml, or the file given with --config; release and no
 from the deploy repository through the API.
 
 commands:
+  --version                                print the cutship version
   validate [--online]                      check cutship.yaml; --online also checks the deploy repository, token and images
   schema                                   print the JSON Schema of cutship.yaml
   version next --app <app> [--dir .]       print the next release tag, nothing when there is none
@@ -37,6 +38,8 @@ commands:
                                            print true when the deploy can skip ci
 `
 
+var buildVersion = "dev"
+
 func main() {
 	os.Exit(dispatch(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
@@ -46,6 +49,12 @@ func dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return usageError(stderr)
 	}
 	switch args[0] {
+	case "--version":
+		if len(args) != 1 {
+			return usageError(stderr)
+		}
+		_, _ = fmt.Fprintln(stdout, "cutship "+buildVersion)
+		return 0
 	case "validate":
 		return validateCommand(args[1:], stderr)
 	case "schema":
