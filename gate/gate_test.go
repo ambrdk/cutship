@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ambrdk/cutship/config"
+	"github.com/ambrdk/cutship/forge"
 )
 
 var (
@@ -13,45 +14,48 @@ var (
 	lint   = config.Lanes{RequiredCheck: "lint"}
 )
 
-func pull(ref string, merged bool) Pull {
-	var p Pull
-	p.Head.Ref, p.Head.SHA = ref, "h14"
+func pull(ref string, merged bool) forge.Change {
+	c := forge.Change{HeadRef: ref, HeadSHA: "h14", State: forge.Open}
 	if merged {
 		at := t0
-		p.MergedAt = &at
+		c.MergedAt, c.State = &at, forge.Merged
 	}
-	return p
+	return c
 }
 
-func bumpPull() Pull { return pull("bump/alert-relay-v0.2.4", true) }
+func bumpPull() forge.Change { return pull("bump/alert-relay-v0.2.4", true) }
 
-func run(name, conclusion string, minute int) CheckRun {
-	at := t0.Add(time.Duration(minute) * time.Minute)
-	return CheckRun{Name: name, Conclusion: conclusion, CompletedAt: &at}
+func run(name string, state forge.CheckState, minute int) forge.Check {
+	c := forge.Check{Name: name, State: state}
+	if state != forge.Pending {
+		c.CompletedAt = t0.Add(time.Duration(minute) * time.Minute)
+	}
+	return c
 }
 
-func green() []CheckRun { return []CheckRun{run("lint", "success", 0)} }
+func green() []forge.Check { return []forge.Check{run("lint", forge.Success, 0)} }
 
 func TestSkip(t *testing.T) {
 	none := []string{}
 	cases := []struct {
 		name    string
-		pulls   []Pull
-		runs    []CheckRun
+		pulls   []forge.Change
+		runs    []forge.Check
 		pending []string
 		skip    bool
 	}{
-		{"bump with green lint", []Pull{bumpPull()}, green(), none, true},
-		{"pending app", []Pull{bumpPull()}, green(), []string{"foo"}, false},
-		{"pending unknown", []Pull{bumpPull()}, green(), nil, false},
-		{"lint failed", []Pull{bumpPull()}, []CheckRun{run("lint", "failure", 0)}, none, false},
-		{"latest green wins", []Pull{bumpPull()}, []CheckRun{run("lint", "failure", 0), run("lint", "success", 5)}, none, true},
-		{"latest red wins", []Pull{bumpPull()}, []CheckRun{run("lint", "success", 0), run("lint", "failure", 5)}, none, false},
-		{"lint running", []Pull{bumpPull()}, []CheckRun{{Name: "lint"}}, none, false},
-		{"not bump", []Pull{pull("fix/env", true)}, green(), none, false},
+		{"bump with green lint", []forge.Change{bumpPull()}, green(), none, true},
+		{"pending app", []forge.Change{bumpPull()}, green(), []string{"foo"}, false},
+		{"pending unknown", []forge.Change{bumpPull()}, green(), nil, false},
+		{"lint failed", []forge.Change{bumpPull()}, []forge.Check{run("lint", forge.Failure, 0)}, none, false},
+		{"latest green wins", []forge.Change{bumpPull()}, []forge.Check{run("lint", forge.Failure, 0), run("lint", forge.Success, 5)}, none, true},
+		{"latest red wins", []forge.Change{bumpPull()}, []forge.Check{run("lint", forge.Success, 0), run("lint", forge.Failure, 5)}, none, false},
+		{"lint running", []forge.Change{bumpPull()}, []forge.Check{run("lint", forge.Pending, 0)}, none, false},
+		{"lint rerun running", []forge.Change{bumpPull()}, []forge.Check{run("lint", forge.Success, 0), run("lint", forge.Pending, 0)}, none, false},
+		{"not bump", []forge.Change{pull("fix/env", true)}, green(), none, false},
 		{"no pull", nil, green(), none, false},
-		{"lint missing", []Pull{bumpPull()}, []CheckRun{run("renovate-config", "success", 0)}, none, false},
-		{"unmerged", []Pull{pull("bump/alert-relay-v0.2.4", false)}, green(), none, false},
+		{"lint missing", []forge.Change{bumpPull()}, []forge.Check{run("renovate-config", forge.Success, 0)}, none, false},
+		{"unmerged", []forge.Change{pull("bump/alert-relay-v0.2.4", false)}, green(), none, false},
 	}
 	for _, tc := range cases {
 		if got := Skip(ambrdk, lint, tc.pulls, tc.runs, tc.pending); got != tc.skip {
@@ -62,35 +66,35 @@ func TestSkip(t *testing.T) {
 
 func TestGateRequiredCheckFromConfig(t *testing.T) {
 	ci := config.Lanes{RequiredCheck: "ci / test"}
-	if Skip(ambrdk, ci, []Pull{bumpPull()}, green(), []string{}) {
+	if Skip(ambrdk, ci, []forge.Change{bumpPull()}, green(), []string{}) {
 		t.Error("lint counted for required check ci / test")
 	}
-	if !Skip(ambrdk, ci, []Pull{bumpPull()}, []CheckRun{run("ci / test", "success", 0)}, []string{}) {
+	if !Skip(ambrdk, ci, []forge.Change{bumpPull()}, []forge.Check{run("ci / test", forge.Success, 0)}, []string{}) {
 		t.Error("green ci / test not counted")
 	}
 	cutship := config.Release{TagFormat: "v{version}", BumpBranchPrefix: "cutship/", BumpTitle: "{app} {tag}"}
-	if Skip(cutship, lint, []Pull{bumpPull()}, green(), []string{}) {
+	if Skip(cutship, lint, []forge.Change{bumpPull()}, green(), []string{}) {
 		t.Error("bump/ branch counted with prefix cutship/")
 	}
-	if Head(cutship, []Pull{pull("cutship/alert-relay-v0.2.4", true)}) != "h14" {
+	if got, _ := Bump(cutship, []forge.Change{pull("cutship/alert-relay-v0.2.4", true)}); got.HeadSHA != "h14" {
 		t.Error("cutship/ branch not found")
 	}
 }
 
 func TestSkipNotBump(t *testing.T) {
-	if Skip(ambrdk, lint, []Pull{pull("bump/notes", true)}, green(), []string{}) {
+	if Skip(ambrdk, lint, []forge.Change{pull("bump/notes", true)}, green(), []string{}) {
 		t.Fatal("bump/notes treated as a bump")
 	}
-	if Head(ambrdk, []Pull{pull("bump/notes", true)}) != "" {
-		t.Fatal("head of bump/notes")
+	if _, ok := Bump(ambrdk, []forge.Change{pull("bump/notes", true)}); ok {
+		t.Fatal("bump/notes found")
 	}
 }
 
-func TestHead(t *testing.T) {
-	if got := Head(ambrdk, []Pull{pull("fix/env", true), bumpPull()}); got != "h14" {
-		t.Fatalf("got %q", got)
+func TestBump(t *testing.T) {
+	if got, ok := Bump(ambrdk, []forge.Change{pull("fix/env", true), bumpPull()}); !ok || got.HeadSHA != "h14" {
+		t.Fatalf("got %+v", got)
 	}
-	if got := Head(ambrdk, []Pull{pull("fix/env", true)}); got != "" {
-		t.Fatalf("got %q", got)
+	if _, ok := Bump(ambrdk, []forge.Change{pull("fix/env", true)}); ok {
+		t.Fatal("found")
 	}
 }

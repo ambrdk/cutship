@@ -1,58 +1,27 @@
 package gate
 
 import (
-	"time"
-
 	"github.com/ambrdk/cutship/bump"
 	"github.com/ambrdk/cutship/config"
+	"github.com/ambrdk/cutship/forge"
 )
 
-type Pull struct {
-	MergedAt *time.Time `json:"merged_at"`
-	Head     struct {
-		Ref string `json:"ref"`
-		SHA string `json:"sha"`
-	} `json:"head"`
-}
-
-type CheckRun struct {
-	Name        string     `json:"name"`
-	Conclusion  string     `json:"conclusion"`
-	CompletedAt *time.Time `json:"completed_at"`
-}
-
-func mergedBump(rel config.Release, pulls []Pull) (Pull, bool) {
-	for _, p := range pulls {
-		if _, _, ok := bump.Parse(rel, p.Head.Ref); ok && p.MergedAt != nil {
-			return p, true
+func Bump(rel config.Release, changes []forge.Change) (forge.Change, bool) {
+	for _, c := range changes {
+		if _, _, ok := bump.Parse(rel, c.HeadRef); ok && c.MergedAt != nil {
+			return c, true
 		}
 	}
-	return Pull{}, false
+	return forge.Change{}, false
 }
 
-func Head(rel config.Release, pulls []Pull) string {
-	if p, ok := mergedBump(rel, pulls); ok {
-		return p.Head.SHA
-	}
-	return ""
-}
-
-func Skip(rel config.Release, l config.Lanes, pulls []Pull, runs []CheckRun, pending []string) bool {
+func Skip(rel config.Release, l config.Lanes, changes []forge.Change, checks []forge.Check, pending []string) bool {
 	if pending == nil || len(pending) > 0 || l.RequiredCheck == "" {
 		return false
 	}
-	if _, ok := mergedBump(rel, pulls); !ok {
+	if _, ok := Bump(rel, changes); !ok {
 		return false
 	}
-	var latest *CheckRun
-	for i := range runs {
-		r := &runs[i]
-		if r.Name != l.RequiredCheck || r.CompletedAt == nil {
-			continue
-		}
-		if latest == nil || r.CompletedAt.After(*latest.CompletedAt) {
-			latest = r
-		}
-	}
-	return latest != nil && latest.Conclusion == "success"
+	latest, ok := forge.Latest(checks, l.RequiredCheck)
+	return ok && latest.State == forge.Success
 }

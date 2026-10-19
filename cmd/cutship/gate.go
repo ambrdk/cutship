@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
+	"github.com/ambrdk/cutship/forge"
 	"github.com/ambrdk/cutship/gate"
 )
 
@@ -50,24 +52,48 @@ func gateCommand(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return 1
 	}
-	var pulls []gate.Pull
+	var pulls []struct {
+		MergedAt *time.Time `json:"merged_at"`
+		Head     struct {
+			Ref string `json:"ref"`
+			SHA string `json:"sha"`
+		} `json:"head"`
+	}
 	if err := readJSON(*pullsPath, &pulls); err != nil {
 		return fail(stderr, err)
 	}
+	changes := make([]forge.Change, 0, len(pulls))
+	for _, p := range pulls {
+		changes = append(changes, forge.Change{HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, MergedAt: p.MergedAt})
+	}
 	if args[0] == "head" {
-		_, _ = fmt.Fprintln(stdout, gate.Head(cfg.Release, pulls))
+		merged, _ := gate.Bump(cfg.Release, changes)
+		_, _ = fmt.Fprintln(stdout, merged.HeadSHA)
 		return 0
 	}
 	var pages []struct {
-		CheckRuns []gate.CheckRun `json:"check_runs"`
+		CheckRuns []struct {
+			Name        string     `json:"name"`
+			Conclusion  string     `json:"conclusion"`
+			CompletedAt *time.Time `json:"completed_at"`
+		} `json:"check_runs"`
 	}
 	if err := readJSON(*checksPath, &pages); err != nil {
 		return fail(stderr, err)
 	}
-	var runs []gate.CheckRun
+	var checks []forge.Check
 	for _, p := range pages {
-		runs = append(runs, p.CheckRuns...)
+		for _, r := range p.CheckRuns {
+			c := forge.Check{Name: r.Name, State: forge.Pending}
+			if r.CompletedAt != nil {
+				c.CompletedAt, c.State = *r.CompletedAt, forge.Failure
+				if r.Conclusion == "success" || r.Conclusion == "neutral" || r.Conclusion == "skipped" {
+					c.State = forge.Success
+				}
+			}
+			checks = append(checks, c)
+		}
 	}
-	_, _ = fmt.Fprintln(stdout, gate.Skip(cfg.Release, cfg.Lanes, pulls, runs, parsePending(*pending)))
+	_, _ = fmt.Fprintln(stdout, gate.Skip(cfg.Release, cfg.Lanes, changes, checks, parsePending(*pending)))
 	return 0
 }
