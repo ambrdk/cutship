@@ -4,6 +4,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/ambrdk/cutship/forge/fake"
 )
 
 func gitRepo(t *testing.T, steps ...[]string) string {
@@ -24,6 +26,25 @@ func gitRepo(t *testing.T, steps ...[]string) string {
 		}
 	}
 	return dir
+}
+
+func TestVersionCLIFromDeployRepo(t *testing.T) {
+	f := fake.New("bot")
+	f.Commit("ambrdk/ansible", "main", map[string][]byte{"cutship.yaml": []byte(strings.Replace(ambrdkConfig, "release:\n", "release:\n  tag_format: \"{version}\"\n", 1))})
+	useForge(t, f)
+	t.Setenv("CUTSHIP_DEPLOY_TOKEN", "deploy-token")
+	dir := gitRepo(t,
+		[]string{"commit", "-q", "--allow-empty", "-m", "feat: a"},
+		[]string{"tag", "1.0.0"},
+		[]string{"commit", "-q", "--allow-empty", "-m", "fix: b"},
+	)
+	code, out, errOut := run(t, "", "version", "next", "--deploy-repo", "ambrdk/ansible", "--app", "alert-relay", "--dir", dir)
+	if code != 0 || out != "1.0.1\n" {
+		t.Fatalf("%d %q %q", code, out, errOut)
+	}
+	if code, _, _ := run(t, "", "version", "next", "--deploy-repo", "ambrdk/ansible", "--config", "x.yaml", "--app", "alert-relay"); code != 2 {
+		t.Fatalf("both sources: %d", code)
+	}
 }
 
 func TestVersionCLI(t *testing.T) {

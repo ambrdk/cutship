@@ -15,7 +15,8 @@ commands:
   --version                                print the cutship version
   validate [--online]                      check cutship.yaml; --online also checks the deploy repository, token and images
   schema                                   print the JSON Schema of cutship.yaml
-  version next --app <app> [--dir .]       print the next release tag, nothing when there is none
+  version next --app <app> [--dir .] [--deploy-repo owner/name]
+                                           print the next release tag, nothing when there is none
   release --app <app> --tag <tag> --deploy-repo <owner/name> [--sha sha]
                                            tag the service and open the bump in the deploy repository
   deploy plan --base <sha> [--head sha] [--env env]
