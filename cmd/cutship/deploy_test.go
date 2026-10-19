@@ -55,6 +55,16 @@ func TestDeployCLI(t *testing.T) {
 	}
 }
 
+func TestDeployCLIWarnsWithoutTelegramToken(t *testing.T) {
+	_, _, _, _ = deployWorld(t)
+	cfg := writeConfig(t, ambrdkConfig+"notify:\n  - type: telegram\n    chat_id: \"-100123\"\n")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "")
+	code, out, errOut := run(t, "", "deploy", "start", "--config", cfg, "--apps", `["alert-relay"]`)
+	if code != 0 || out != "" || !strings.Contains(errOut, "::warning::the deploy goes on without a post: TELEGRAM_BOT_TOKEN is required") {
+		t.Fatalf("%d %q %q", code, out, errOut)
+	}
+}
+
 func TestDeployCLIErrors(t *testing.T) {
 	f, cfg, base, _ := deployWorld(t)
 	for _, args := range [][]string{

@@ -26,7 +26,7 @@ func (f *Forge) CreateDeployment(_ context.Context, name, environment, sha strin
 	}
 	f.seq++
 	d := &deploymentRecord{
-		Deployment: forge.Deployment{ID: int64(f.seq), Environment: environment, SHA: sha, State: forge.DeployInProgress, CreatedAt: time.Unix(int64(f.seq), 0).UTC()},
+		Deployment: forge.Deployment{ID: int64(f.seq), Environment: environment, SHA: sha, State: forge.DeployInProgress, CreatedAt: time.Unix(int64(f.seq), 0).UTC(), Payload: payload},
 		repo:       name,
 		payload:    payload,
 	}

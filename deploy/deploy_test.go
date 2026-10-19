@@ -2,15 +2,22 @@ package deploy
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ambrdk/cutship/config"
+	"github.com/ambrdk/cutship/event"
 	"github.com/ambrdk/cutship/forge"
 	"github.com/ambrdk/cutship/forge/fake"
 	"github.com/ambrdk/cutship/ledger"
+	"github.com/ambrdk/cutship/notifier"
+	nfake "github.com/ambrdk/cutship/notifier/fake"
+	"github.com/ambrdk/cutship/post"
+	"github.com/ambrdk/cutship/release"
 	"github.com/ambrdk/cutship/state"
 )
 
@@ -296,6 +303,118 @@ func TestStartWithActionsTokenKeepsOneState(t *testing.T) {
 	comments := r.f.CommentsOf(repo, ch.Number)
 	if len(comments) != 1 || !strings.Contains(comments[0].Body, `"stage":"deploying"`) {
 		t.Fatalf("comments %+v", comments)
+	}
+}
+
+func posting(t *testing.T, r *repoState, sha, id string) (Run, *nfake.Notifier, *[]string) {
+	t.Helper()
+	n := nfake.New("telegram:-100123")
+	var warnings []string
+	run := Run{Repo: repo, Env: "prod", SHA: sha, ID: id, Attempt: 1, Now: t0, Notifiers: []notifier.Notifier{n}, Warn: func(s string) { warnings = append(warnings, s) }}
+	return run, n, &warnings
+}
+
+func TestStartAddsMergedOnce(t *testing.T) {
+	r := setup(t)
+	ch, head := r.mergeBump(t, "v0.3.1")
+	run, n, _ := posting(t, r, head, "80-1")
+	if err := Start(ctx, r.f, r.f, r.cfg, run, []string{"alert-relay"}); err != nil {
+		t.Fatal(err)
+	}
+	id := fmt.Sprintf("pull_request:closed:%d:%s", ch.Number, ch.HeadSHA)
+	view := n.Views[len(n.Views)-1]
+	if !slices.Contains(view.State.Seen, id) || view.State.MergedBy != "bot" || view.State.Stage != release.Deploying {
+		t.Fatalf("%+v", view.State)
+	}
+	p := post.New(r.f, repo, []notifier.Notifier{n}, func(string) {})
+	before := n.Published()
+	merged := event.Event{Kind: event.Merged, ID: id, At: t0, Actor: "bot"}
+	if _, err := p.Apply(ctx, post.Target{Change: ch, App: "alert-relay"}, merged); err != nil || n.Published() != before {
+		t.Fatalf("notify's merged event published again: %v", err)
+	}
+}
+
+func TestFinishEditsSamePost(t *testing.T) {
+	r := setup(t)
+	_, head := r.mergeBump(t, "v0.3.1")
+	run, n, warnings := posting(t, r, head, "81-1")
+	if err := Start(ctx, r.f, r.f, r.cfg, run, []string{"alert-relay"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Finish(ctx, r.f, r.f, r.cfg, run, []string{"alert-relay"}, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n.Posts() != 1 || n.Published() != 2 || n.Views[1].State.Stage != release.Deployed || len(*warnings) != 0 {
+		t.Fatalf("posts %d published %d warnings %v", n.Posts(), n.Published(), *warnings)
+	}
+}
+
+func TestNonBumpDeployThread(t *testing.T) {
+	r := setup(t)
+	ch, err := r.f.PushChange(ctx, repo, forge.ChangeRequest{Base: "main", Branch: "fix/env", Title: "fix(apps): tune alert-relay env", Files: map[string][]byte{"apps/alert-relay/env.j2": []byte("A=9\n")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := r.f.Merge(repo, ch.Number, "dev", t0)
+	run, n, _ := posting(t, r, head, "82-1")
+	if err := Start(ctx, r.f, r.f, r.cfg, run, []string{"alert-relay"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Finish(ctx, r.f, r.f, r.cfg, run, []string{"alert-relay"}, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	comments := r.f.CommentsOf(repo, ch.Number)
+	if n.Posts() != 1 || n.Published() != 2 || len(comments) != 1 || !strings.Contains(comments[0].Body, `"app":"alert-relay"`) {
+		t.Fatalf("posts %d published %d comments %+v", n.Posts(), n.Published(), comments)
+	}
+	if v := n.Views[1].State; v.Title != "fix(apps): tune alert-relay env" || v.Stage != release.Deployed {
+		t.Fatalf("%+v", v)
+	}
+
+	pushed := r.commit(map[string][]byte{"apps/alert-relay/env.j2": []byte("A=10\n")})
+	run, n, _ = posting(t, r, pushed, "83-1")
+	if err := Start(ctx, r.f, r.f, r.cfg, run, []string{"alert-relay"}); err != nil {
+		t.Fatal(err)
+	}
+	if latest, _, _ := ledger.Latest(ctx, r.f, repo, "prod", "alert-relay"); !strings.Contains(string(latest.Data), `"messages"`) {
+		t.Fatalf("payload %s", latest.Data)
+	}
+	if err := Finish(ctx, r.f, r.f, r.cfg, run, []string{"alert-relay"}, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n.Posts() != 1 || n.Published() != 2 || n.Views[1].State.Stage != release.Failed {
+		t.Fatalf("direct push: posts %d published %d", n.Posts(), n.Published())
+	}
+}
+
+func TestOtherAppsDoNotWriteIntoABump(t *testing.T) {
+	r := setup(t)
+	ch, head := r.mergeBump(t, "v0.3.1")
+	run, n, _ := posting(t, r, head, "84-1")
+	if err := Start(ctx, r.f, r.f, r.cfg, run, []string{"alert-relay", "cache"}); err != nil {
+		t.Fatal(err)
+	}
+	if comments := r.f.CommentsOf(repo, ch.Number); len(comments) != 1 || strings.Contains(comments[0].Body, `"app":"cache"`) {
+		t.Fatalf("comments %+v", comments)
+	}
+	if n.Posts() != 2 {
+		t.Fatalf("posts %d", n.Posts())
+	}
+}
+
+func TestDeployNotifierFailureWarns(t *testing.T) {
+	r := setup(t)
+	_, head := r.mergeBump(t, "v0.3.1")
+	run, n, warnings := posting(t, r, head, "85-1")
+	n.FailNext(errors.New("telegram is down"))
+	if err := Start(ctx, r.f, r.f, r.cfg, run, []string{"alert-relay"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*warnings) != 1 || !strings.Contains((*warnings)[0], "telegram is down") {
+		t.Fatalf("%v", *warnings)
+	}
+	if got, _, _ := ledger.Latest(ctx, r.f, repo, "prod", "alert-relay"); got.State != forge.DeployInProgress {
+		t.Fatalf("%+v", got)
 	}
 }
 

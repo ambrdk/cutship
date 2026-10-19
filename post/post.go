@@ -66,6 +66,27 @@ func (p *Publisher) migrate(r *state.Record) {
 	}
 }
 
+func Send(ctx context.Context, ns []notifier.Notifier, warn func(string), view render.View, messages map[string]json.RawMessage, changed bool) map[string]json.RawMessage {
+	refs := map[string]json.RawMessage{}
+	for _, n := range ns {
+		old := messages[n.Key()]
+		if !changed && n.Done(old) {
+			continue
+		}
+		ref, status, err := n.Publish(ctx, old, view)
+		if err != nil {
+			warn(fmt.Sprintf("%s: the release post was not updated: %v", n.Key(), err))
+		}
+		if w := notifier.Warning(status); w != "" {
+			warn(n.Key() + ": " + w)
+		}
+		if len(ref) > 0 && !bytes.Equal(ref, old) {
+			refs[n.Key()] = ref
+		}
+	}
+	return refs
+}
+
 func (p *Publisher) Apply(ctx context.Context, t Target, events ...event.Event) (state.Record, error) {
 	changed := false
 	rec, err := p.st.Update(ctx, t.Change, t.App, func(r *state.Record) {
@@ -85,24 +106,7 @@ func (p *Publisher) Apply(ctx context.Context, t Target, events ...event.Event) 
 	if err != nil {
 		return state.Record{}, err
 	}
-	view := render.Build(rec.State)
-	refs := map[string]json.RawMessage{}
-	for _, n := range p.ns {
-		old := rec.Messages[n.Key()]
-		if !changed && n.Done(old) {
-			continue
-		}
-		ref, status, err := n.Publish(ctx, old, view)
-		if err != nil {
-			p.warn(fmt.Sprintf("%s: the release post was not updated: %v", n.Key(), err))
-		}
-		if w := notifier.Warning(status); w != "" {
-			p.warn(n.Key() + ": " + w)
-		}
-		if len(ref) > 0 && !bytes.Equal(ref, old) {
-			refs[n.Key()] = ref
-		}
-	}
+	refs := Send(ctx, p.ns, p.warn, render.Build(rec.State), rec.Messages, changed)
 	if len(refs) == 0 {
 		return rec, nil
 	}

@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/ambrdk/cutship/forge"
@@ -74,6 +75,24 @@ func TestStartAfterFailureCreatesNew(t *testing.T) {
 	retry, err := Start(ctx, f, repo, "prod", "a", "s1", "")
 	if err != nil || retry.ID == failed.ID || retry.State != forge.DeployInProgress {
 		t.Fatalf("%+v %+v %v", failed, retry, err)
+	}
+}
+
+func TestLedgerCarriesData(t *testing.T) {
+	f := fake.New("bot")
+	if _, err := StartWith(ctx, f, repo, "prod", "a", "s1", "", json.RawMessage(`{"post":5}`)); err != nil {
+		t.Fatal(err)
+	}
+	latest, _, err := History(ctx, f, repo, "prod", "a")
+	if err != nil || latest == nil || string(latest.Data) != `{"post":5}` {
+		t.Fatalf("%+v %v", latest, err)
+	}
+	done, err := FinishWith(ctx, f, repo, "prod", "b", "s1", true, "", json.RawMessage(`{"post":6}`))
+	if err != nil || string(done.Data) != `{"post":6}` {
+		t.Fatalf("%+v %v", done, err)
+	}
+	if latest, _, _ := History(ctx, f, repo, "prod", "b"); string(latest.Data) != `{"post":6}` {
+		t.Fatalf("%+v", latest)
 	}
 }
 

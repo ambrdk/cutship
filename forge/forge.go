@@ -127,6 +127,7 @@ type Deployment struct {
 	SHA         string
 	State       DeployState
 	CreatedAt   time.Time
+	Payload     []byte
 }
 
 type Deployments interface {

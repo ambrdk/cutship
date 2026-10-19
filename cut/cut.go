@@ -15,7 +15,6 @@ import (
 	"github.com/ambrdk/cutship/pin"
 	"github.com/ambrdk/cutship/post"
 	"github.com/ambrdk/cutship/registry"
-	"github.com/ambrdk/cutship/state"
 )
 
 const ConfigPath = "cutship.yaml"
@@ -55,10 +54,6 @@ func (e *ConfigError) Error() string {
 		parts[i] = p.Error()
 	}
 	return e.File + ": " + strings.Join(parts, "; ")
-}
-
-func Link(r state.Record) string {
-	return "cutship release " + r.App + " " + r.Tag
 }
 
 func LoadConfig(ctx context.Context, f forge.Reader, repo string) (config.Config, string, error) {

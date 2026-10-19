@@ -2,8 +2,10 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"sort"
@@ -11,14 +13,15 @@ import (
 
 	"github.com/ambrdk/cutship/bump"
 	"github.com/ambrdk/cutship/config"
-	"github.com/ambrdk/cutship/cut"
 	"github.com/ambrdk/cutship/event"
 	"github.com/ambrdk/cutship/forge"
 	"github.com/ambrdk/cutship/gate"
 	"github.com/ambrdk/cutship/ledger"
+	"github.com/ambrdk/cutship/notifier"
 	"github.com/ambrdk/cutship/pin"
+	"github.com/ambrdk/cutship/post"
 	"github.com/ambrdk/cutship/release"
-	"github.com/ambrdk/cutship/state"
+	"github.com/ambrdk/cutship/render"
 )
 
 type Plan struct {
@@ -28,13 +31,21 @@ type Plan struct {
 }
 
 type Run struct {
-	Repo    string
-	Env     string
-	SHA     string
-	ID      string
-	Attempt int
-	LogURL  string
-	Now     time.Time
+	Repo      string
+	Env       string
+	SHA       string
+	ID        string
+	Attempt   int
+	LogURL    string
+	Now       time.Time
+	Notifiers []notifier.Notifier
+	Warn      func(string)
+}
+
+func (r Run) warn(s string) {
+	if r.Warn != nil {
+		r.Warn(s)
+	}
 }
 
 func checkEnv(cfg config.Config, env string) error {
@@ -145,48 +156,96 @@ func MakePlan(ctx context.Context, f forge.Forge, d forge.Deployments, cfg confi
 	return plan, nil
 }
 
-func bumpOf(ctx context.Context, f forge.Reader, cfg config.Config, repo, sha, app string) (forge.Change, bool, error) {
-	changes, err := f.ChangesForCommit(ctx, repo, sha)
-	if err != nil {
-		return forge.Change{}, false, err
-	}
-	for _, c := range changes {
-		if other, _, ok := bump.Parse(cfg.Release, c.HeadRef); ok && other == app && c.MergedAt != nil {
-			return c, true, nil
-		}
-	}
-	return forge.Change{}, false, nil
+type home struct {
+	change forge.Change
+	tag    string
+	found  bool
 }
 
-func record(ctx context.Context, f forge.Forge, cfg config.Config, run Run, app string, e event.Event) error {
-	ch, ok, err := bumpOf(ctx, f, cfg, run.Repo, run.SHA, app)
-	if err != nil || !ok {
-		return err
+func homeOf(ctx context.Context, f forge.Reader, cfg config.Config, repo, sha, app string) (home, error) {
+	changes, err := f.ChangesForCommit(ctx, repo, sha)
+	if err != nil {
+		return home{}, err
 	}
-	e.PR, e.PRURL = ch.Number, ch.URL
-	_, err = state.New(f, run.Repo, cut.Link).Update(ctx, ch, app, func(r *state.Record) {
-		if r.App == "" {
-			r.App = app
+	var plain *forge.Change
+	for i, c := range changes {
+		if c.MergedAt == nil {
+			continue
 		}
-		r.Env = run.Env
-		if _, tag, ok := bump.Parse(cfg.Release, ch.HeadRef); ok && r.Tag == "" {
-			r.Tag = tag
+		other, tag, isBump := bump.Parse(cfg.Release, c.HeadRef)
+		if isBump && other == app {
+			return home{change: c, tag: tag, found: true}, nil
 		}
-		r.State, _ = release.Apply(r.State, e)
-	})
-	return err
+		if !isBump && plain == nil {
+			plain = &changes[i]
+		}
+	}
+	if plain != nil {
+		return home{change: *plain, found: true}, nil
+	}
+	return home{}, nil
+}
+
+func merged(ch forge.Change, app string) event.Event {
+	return event.Event{
+		Kind:   event.Merged,
+		ID:     fmt.Sprintf("pull_request:closed:%d:%s", ch.Number, ch.HeadSHA),
+		At:     *ch.MergedAt,
+		App:    app,
+		Actor:  ch.MergedBy,
+		Commit: ch.MergeSHA,
+		Title:  ch.Title,
+		PR:     ch.Number,
+		PRURL:  ch.URL,
+	}
+}
+
+type thread struct {
+	State    release.State              `json:"state"`
+	Messages map[string]json.RawMessage `json:"messages,omitempty"`
+}
+
+func (run Run) unanchored(ctx context.Context, d forge.Deployments, app string, e event.Event) json.RawMessage {
+	var t thread
+	if running, ok, err := ledger.Running(ctx, d, run.Repo, run.Env, app, run.SHA); err == nil && ok && len(running.Data) > 0 {
+		_ = json.Unmarshal(running.Data, &t)
+	}
+	var changed bool
+	t.State, changed = release.Apply(t.State, e)
+	refs := post.Send(ctx, run.Notifiers, run.warn, render.Build(t.State), t.Messages, changed)
+	if len(refs) > 0 {
+		if t.Messages == nil {
+			t.Messages = map[string]json.RawMessage{}
+		}
+		maps.Copy(t.Messages, refs)
+	}
+	raw, _ := json.Marshal(t)
+	return raw
 }
 
 func Start(ctx context.Context, f forge.Forge, d forge.Deployments, cfg config.Config, run Run, apps []string) error {
 	if err := checkEnv(cfg, run.Env); err != nil {
 		return err
 	}
+	p := post.New(f, run.Repo, run.Notifiers, run.warn)
 	for _, app := range apps {
+		h, err := homeOf(ctx, f, cfg, run.Repo, run.SHA, app)
+		if err != nil {
+			return err
+		}
+		e := event.Event{Kind: event.DeployStarted, ID: "deploy:" + run.ID + ":" + app + ":started", At: run.Now, App: app, Commit: run.SHA, RunURL: run.LogURL, Attempt: run.Attempt}
+		if !h.found {
+			if _, err := ledger.StartWith(ctx, d, run.Repo, run.Env, app, run.SHA, run.LogURL, run.unanchored(ctx, d, app, e)); err != nil {
+				return fmt.Errorf("ledger %s: %w", app, err)
+			}
+			continue
+		}
 		if _, err := ledger.Start(ctx, d, run.Repo, run.Env, app, run.SHA, run.LogURL); err != nil {
 			return fmt.Errorf("ledger %s: %w", app, err)
 		}
-		e := event.Event{Kind: event.DeployStarted, ID: "deploy:" + run.ID + ":" + app + ":started", At: run.Now, App: app, Commit: run.SHA, RunURL: run.LogURL, Attempt: run.Attempt}
-		if err := record(ctx, f, cfg, run, app, e); err != nil {
+		e.PR, e.PRURL = h.change.Number, h.change.URL
+		target := post.Target{Change: h.change, App: app, Env: run.Env, Tag: h.tag}
+		if _, err := p.Apply(ctx, target, merged(h.change, app), e); err != nil {
 			return fmt.Errorf("state of %s: %w", app, err)
 		}
 	}
@@ -201,9 +260,11 @@ func Finish(ctx context.Context, f forge.Forge, d forge.Deployments, cfg config.
 	if succeeded {
 		result = event.Success
 	}
+	p := post.New(f, run.Repo, run.Notifiers, run.warn)
 	for _, app := range apps {
-		if _, err := ledger.Finish(ctx, d, run.Repo, run.Env, app, run.SHA, succeeded, run.LogURL); err != nil {
-			return fmt.Errorf("ledger %s: %w", app, err)
+		h, err := homeOf(ctx, f, cfg, run.Repo, run.SHA, app)
+		if err != nil {
+			return err
 		}
 		e := event.Event{Kind: event.DeployFinished, ID: "deploy:" + run.ID + ":" + app + ":finished", At: run.Now, App: app, Commit: run.SHA, RunURL: run.LogURL, Attempt: run.Attempt, Result: result}
 		if report != nil {
@@ -213,7 +274,18 @@ func Finish(ctx context.Context, f forge.Forge, d forge.Deployments, cfg config.
 				e.FailedTask, e.Error = report.Failure.Task, report.Failure.Message
 			}
 		}
-		if err := record(ctx, f, cfg, run, app, e); err != nil {
+		if !h.found {
+			if _, err := ledger.FinishWith(ctx, d, run.Repo, run.Env, app, run.SHA, succeeded, run.LogURL, run.unanchored(ctx, d, app, e)); err != nil {
+				return fmt.Errorf("ledger %s: %w", app, err)
+			}
+			continue
+		}
+		if _, err := ledger.Finish(ctx, d, run.Repo, run.Env, app, run.SHA, succeeded, run.LogURL); err != nil {
+			return fmt.Errorf("ledger %s: %w", app, err)
+		}
+		e.PR, e.PRURL = h.change.Number, h.change.URL
+		target := post.Target{Change: h.change, App: app, Env: run.Env, Tag: h.tag}
+		if _, err := p.Apply(ctx, target, merged(h.change, app), e); err != nil {
 			return fmt.Errorf("state of %s: %w", app, err)
 		}
 	}

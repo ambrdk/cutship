@@ -43,7 +43,7 @@ func TestSetDeploymentState(t *testing.T) {
 func TestListDeploymentsStates(t *testing.T) {
 	c, rec := record(t, map[string]http.HandlerFunc{
 		"GET /repos/o/r/deployments": paged(
-			`[{"id":3,"sha":"s3","environment":"prod/a"},{"id":2,"sha":"s2","environment":"prod/a"}]`,
+			`[{"id":3,"sha":"s3","environment":"prod/a","payload":{"app":"a"}},{"id":2,"sha":"s2","environment":"prod/a"}]`,
 			`[{"id":1,"sha":"s1","environment":"prod/a"}]`,
 		),
 		"GET /repos/o/r/deployments/3/statuses": reply(`[]`),
@@ -60,7 +60,7 @@ func TestListDeploymentsStates(t *testing.T) {
 			break
 		}
 	}
-	if len(got) != 2 || got[0].State != forge.DeployInProgress || got[1].ID != 2 || got[1].State != forge.DeployFailure {
+	if len(got) != 2 || got[0].State != forge.DeployInProgress || string(got[0].Payload) != `{"app":"a"}` || got[1].ID != 2 || got[1].State != forge.DeployFailure {
 		t.Fatalf("%+v", got)
 	}
 	if rec.has("GET /repos/o/r/deployments/1/statuses") {

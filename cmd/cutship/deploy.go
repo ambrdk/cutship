@@ -87,6 +87,10 @@ func deployCommand(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	run := deploy.Run{Repo: *repo, Env: *env, SHA: *sha, Now: time.Now().UTC()}
+	run.Warn = func(w string) { _, _ = fmt.Fprintf(stderr, "::warning::%s\n", w) }
+	if run.Notifiers, err = notifiersFor(stderr)(cfg); err != nil {
+		run.Warn("the deploy goes on without a post: " + err.Error())
+	}
 	run.ID = os.Getenv("GITHUB_RUN_ID") + "-" + os.Getenv("GITHUB_RUN_ATTEMPT")
 	run.Attempt, _ = strconv.Atoi(os.Getenv("GITHUB_RUN_ATTEMPT"))
 	if server, id := os.Getenv("GITHUB_SERVER_URL"), os.Getenv("GITHUB_RUN_ID"); server != "" && id != "" {

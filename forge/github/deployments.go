@@ -34,6 +34,7 @@ func deployment(d *gh.Deployment, state forge.DeployState) forge.Deployment {
 		SHA:         d.GetSHA(),
 		State:       state,
 		CreatedAt:   d.GetCreatedAt().Time,
+		Payload:     d.Payload,
 	}
 }
 
