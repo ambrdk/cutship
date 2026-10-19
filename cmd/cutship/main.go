@@ -16,6 +16,12 @@ commands:
   version next --app <app> [--dir .]       print the next release tag, nothing when there is none
   release --app <app> --tag <tag> --deploy-repo <owner/name> [--sha sha]
                                            tag the service and open the bump in the deploy repository
+  deploy plan --base <sha> [--head sha] [--env env]
+                                           print apps=, skip_ci= and change= for a push to the deploy repository
+  deploy start --apps <json> [--sha sha] [--env env]
+                                           record the deploy of these apps as started
+  deploy finish --apps <json> --result success|failure [--report deploy-report.json] [--sha sha] [--env env]
+                                           record the result of the deploy
   notify                                   post release and deploy events to Telegram
   pin read [--root dir] <app>              print the pinned image of an app
   pin check [--root dir] <app> <tag>       print bump or same for a release tag
@@ -47,6 +53,8 @@ func dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return versionCommand(args[1:], stdout, stderr)
 	case "release":
 		return releaseCommand(args[1:], stdout, stderr)
+	case "deploy":
+		return deployCommand(args[1:], stdout, stderr)
 	case "notify":
 		return notifyCommand(args[1:], stderr)
 	case "pin":
