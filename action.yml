@@ -19,7 +19,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        REPO: ${{ github.action_repository }}
+        REPO: ${{ github.action_repository || github.repository }}
         REF: ${{ inputs.version || github.action_ref }}
       run: '"$GITHUB_ACTION_PATH/scripts/install.sh" "$REPO" "$REF" "$RUNNER_TEMP/cutship" >> "$GITHUB_OUTPUT"'
 
