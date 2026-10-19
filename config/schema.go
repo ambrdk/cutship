@@ -148,6 +148,7 @@ func maxLength(n uint64) *uint64 {
 func (Lanes) JSONSchemaExtend(s *jsonschema.Schema) {
 	describe(s, map[string]string{
 		"required_check": "Check that must be green on the bump pull request before its deploy skips CI. Default lint.",
+		"ci_workflow":    "Name of the workflow whose result cutship notify adds to the release post. Default ci.",
 	})
 }
 

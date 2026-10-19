@@ -53,6 +53,7 @@ type Release struct {
 
 type Lanes struct {
 	RequiredCheck string `yaml:"required_check,omitempty" json:"required_check,omitempty"`
+	CIWorkflow    string `yaml:"ci_workflow,omitempty" json:"ci_workflow,omitempty"`
 }
 
 type Notifier struct {
@@ -187,6 +188,9 @@ func (c *Config) defaults() {
 	}
 	if c.Lanes.RequiredCheck == "" {
 		c.Lanes.RequiredCheck = "lint"
+	}
+	if c.Lanes.CIWorkflow == "" {
+		c.Lanes.CIWorkflow = "ci"
 	}
 	for i := range c.Notify {
 		if c.Notify[i].Type == "telegram" && c.Notify[i].Mode == "" {

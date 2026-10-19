@@ -75,8 +75,8 @@ func TestParseMinimal(t *testing.T) {
 	if cfg.Release != want {
 		t.Errorf("release = %+v, want %+v", cfg.Release, want)
 	}
-	if cfg.Lanes.RequiredCheck != "lint" {
-		t.Errorf("required check = %q", cfg.Lanes.RequiredCheck)
+	if cfg.Lanes.RequiredCheck != "lint" || cfg.Lanes.CIWorkflow != "ci" {
+		t.Errorf("lanes = %+v", cfg.Lanes)
 	}
 	if len(cfg.Notify) != 0 {
 		t.Errorf("notify = %v", cfg.Notify)
