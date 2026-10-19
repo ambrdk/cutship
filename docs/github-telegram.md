@@ -47,7 +47,7 @@ Run `cutship validate` in the deploy repository. It prints every problem with it
 2. Add it to the channel as an admin that may post and edit messages.
 3. Add it to the channel's discussion group as an admin, so it sees the copies of its posts there and can reply to them. Without a discussion group the post goes out without the comment.
 
-`cutship validate --online` checks all three.
+`cutship validate --online` checks the second and the third. It cannot tell whether another program also reads the bot's updates, so keep the first one by hand.
 
 ## 4. The service workflow
 
@@ -73,6 +73,6 @@ From a checkout of the deploy repository:
 CUTSHIP_DEPLOY_TOKEN=... TELEGRAM_BOT_TOKEN=... cutship validate --online
 ```
 
-It reads the deploy repository with the token, checks every pin and its image in the registry, the token's rights, the auto-merge and branch settings and the bot's rights in the channel and its discussion group. Errors exit with 1, warnings only print.
+It reads the deploy repository with the token, checks every pin and its image in the registry, whether the token's user may push, whether "Allow auto-merge" and "Automatically delete head branches" are on, and the bot's rights in the channel and its discussion group. It does not check the branch protection rule or the required check; look at those in the repository settings. Errors exit with 1, warnings only print.
 
 Then merge a `fix:` commit into the service. Within a few minutes the post shows 📦, the bump merges by itself, the deploy starts and the post ends with ✅.

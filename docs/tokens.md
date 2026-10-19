@@ -17,7 +17,19 @@ cutship reads every secret from the environment and never prints it.
 Use one of:
 
 - A fine-grained personal access token limited to the deploy repository, with **Contents: read and write** and **Pull requests: read and write**.
-- A GitHub App installed on the deploy repository with the same two permissions, and its installation token in the secret.
+- A GitHub App installed on the deploy repository with the same two permissions. Installation tokens expire after an hour, so do not store one in a secret: store the app id and private key, and mint the token in the service workflow right before cutship runs:
+
+  ```yaml
+  - id: app
+    uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+    with:
+      app-id: ${{ vars.CUTSHIP_APP_ID }}
+      private-key: ${{ secrets.CUTSHIP_APP_PRIVATE_KEY }}
+      owner: acme
+      repositories: deploy
+  ```
+
+  and pass `CUTSHIP_DEPLOY_TOKEN: ${{ steps.app.outputs.token }}` to `version next` and `release`.
 
 ## GITHUB_TOKEN permissions
 

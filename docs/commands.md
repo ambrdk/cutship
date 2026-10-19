@@ -10,7 +10,7 @@ Most commands read `cutship.yaml` from the current directory or from `--config`.
 cutship validate [--config cutship.yaml] [--online]
 ```
 
-Checks the config and prints `::error file=<config>,line=<n>::<field>: <problem>` for each problem. With `--online` it also reads the deploy repository with `CUTSHIP_DEPLOY_TOKEN` (or `GITHUB_TOKEN`), compares the config there with the local one, checks every pin and its image in the registry, the token's push rights, the auto-merge and branch settings, and for each Telegram entry the bot's rights in the channel and its discussion group. Warnings do not change the exit code.
+Checks the config and prints `::error file=<config>,line=<n>::<field>: <problem>` for each problem. With `--online` it also reads the deploy repository with `CUTSHIP_DEPLOY_TOKEN` (or `GITHUB_TOKEN`), compares the config there with the local one, checks every pin and its image in the registry, whether the token's user may push, whether auto-merge and head branch deletion are on (branch protection is not checked), and for each Telegram entry the bot's rights in the channel and its discussion group. Warnings do not change the exit code.
 
 ## schema
 

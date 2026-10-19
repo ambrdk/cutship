@@ -9,8 +9,8 @@ flowchart LR
   A[merge in the service] --> B[cutship version next]
   B --> C[build and push the image]
   C --> D[cutship release]
-  D --> E[bump pull request\nauto-merge]
-  E --> F[cutship lane\nfast or full CI]
+  D --> E[bump pull request<br>auto-merge]
+  E --> F[cutship lane<br>fast or full CI]
   F --> G[merge]
   G --> H[cutship deploy plan]
   H --> I[cutship deploy start]
@@ -59,7 +59,7 @@ This takes about ten minutes. The full walk-through with every setting is in [do
 
 ## Install
 
-In GitHub Actions, `uses: ambrdk/cutship@<full sha> # vX.Y.Z` puts the release of that commit on `PATH` after checking its checksum. It never builds from source: a commit without a release fails the job. The `version` input installs another release instead.
+In GitHub Actions, `uses: ambrdk/cutship@v0.3.0` or `uses: ambrdk/cutship@<full sha> # v0.3.0` puts that release on `PATH` after checking its checksum. A full SHA is the safer pin; the examples use the version for readability. The Action never builds from source: a commit without a release fails the job. The `version` input installs another release instead.
 
 Elsewhere, download an archive and `checksums.txt` from the [releases](https://github.com/ambrdk/cutship/releases) or run the image `ghcr.io/ambrdk/cutship`. How to verify the cosign signature is in [docs/tokens.md](docs/tokens.md#verifying-a-release).
 
