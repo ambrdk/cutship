@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"strings"
 	"time"
 )
@@ -97,6 +98,29 @@ type AutoMerger interface {
 type Forge interface {
 	Reader
 	Writer
+}
+
+type DeployState string
+
+const (
+	DeployInProgress DeployState = "in_progress"
+	DeploySuccess    DeployState = "success"
+	DeployFailure    DeployState = "failure"
+	DeployInactive   DeployState = "inactive"
+)
+
+type Deployment struct {
+	ID          int64
+	Environment string
+	SHA         string
+	State       DeployState
+	CreatedAt   time.Time
+}
+
+type Deployments interface {
+	CreateDeployment(ctx context.Context, repo, environment, sha string, payload []byte) (Deployment, error)
+	SetDeploymentState(ctx context.Context, repo string, id int64, state DeployState, logURL string) error
+	ListDeployments(ctx context.Context, repo, environment string) iter.Seq2[Deployment, error]
 }
 
 func SplitRepo(repo string) (string, string, error) {

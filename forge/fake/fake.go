@@ -34,8 +34,9 @@ type Forge struct {
 	User    string
 	repos   map[string]*repo
 	commits map[string]*commit
-	fail    map[string][]error
-	seq     int
+	fail        map[string][]error
+	deployments []*deploymentRecord
+	seq         int
 	Calls   []string
 }
 
