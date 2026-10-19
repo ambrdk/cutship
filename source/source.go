@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/ambrdk/ship/bump"
 	"github.com/ambrdk/ship/event"
 	"github.com/ambrdk/ship/github"
+	"github.com/ambrdk/ship/pin"
 )
 
 type Anchored struct {
@@ -86,11 +89,11 @@ func Parse(ctx context.Context, api *github.API, repo, eventName string, payload
 
 func (p parser) pullRequest(ctx context.Context, pl prPayload) ([]Anchored, error) {
 	pr := pl.PullRequest
-	app, _, ok := bumpBranch(pr.Head.Ref)
+	app, tag, ok := bump.Parse(pr.Head.Ref)
 	if !ok {
 		return nil, nil
 	}
-	e := event.Event{App: app, Title: pr.Title, PR: pr.Number, PRURL: pr.HTMLURL, ID: fmt.Sprintf("pull_request:%s:%d:%s", pl.Action, pr.Number, pr.Head.SHA)}
+	e := event.Event{App: app, To: tag, Title: pr.Title, PR: pr.Number, PRURL: pr.HTMLURL, ID: fmt.Sprintf("pull_request:%s:%d:%s", pl.Action, pr.Number, pr.Head.SHA)}
 	switch {
 	case pl.Action == "opened":
 		e.Kind, e.At = event.ReleaseOpened, pr.CreatedAt
@@ -106,9 +109,13 @@ func (p parser) pullRequest(ctx context.Context, pl prPayload) ([]Anchored, erro
 	default:
 		return nil, nil
 	}
-	var err error
-	if e.Image, e.To, err = p.image(ctx, app, pr.Head.SHA); err != nil {
+	image, pinned, err := p.image(ctx, app, pr.Head.SHA)
+	if err != nil {
 		return nil, err
+	}
+	e.Image = image
+	if pinned != "" && pinned != tag {
+		slog.Warn("the bump branch and app.yml disagree on the version, using the branch", "branch", pr.Head.Ref, "app_yml", pinned)
 	}
 	if _, e.From, err = p.image(ctx, app, pr.Base.SHA); err != nil {
 		return nil, err
@@ -122,7 +129,7 @@ func (p parser) ci(pl runPayload) []Anchored {
 		return nil
 	}
 	pr := run.PullRequests[0]
-	if _, _, ok := bumpBranch(pr.Head.Ref); !ok {
+	if _, _, ok := bump.Parse(pr.Head.Ref); !ok {
 		return nil
 	}
 	result := event.Failure
@@ -238,7 +245,7 @@ func (p parser) commitAnchor(ctx context.Context, trigger, sha string) (Anchored
 			continue
 		}
 		e := event.Event{PR: pr.Number, PRURL: pr.HTMLURL, Title: pr.Title}
-		if app, _, ok := bumpBranch(pr.Head.Ref); ok {
+		if app, _, ok := bump.Parse(pr.Head.Ref); ok {
 			e.App = app
 			if e.Image, e.To, err = p.image(ctx, app, sha); err != nil {
 				return Anchored{}, err
@@ -269,9 +276,9 @@ func (p parser) appAnchor(ctx context.Context, trigger string, commit Anchored, 
 			}
 		}
 	}
-	if tag != "" {
+	if branch, _, err := bump.Name(app, tag); err == nil {
 		owner, _, _ := strings.Cut(p.repo, "/")
-		pulls, err := p.api.PullsByHead(ctx, p.repo, owner+":bump/"+app+"-"+tag)
+		pulls, err := p.api.PullsByHead(ctx, p.repo, owner+":"+branch)
 		if err != nil {
 			return 0, err
 		}
@@ -292,7 +299,11 @@ func (p parser) image(ctx context.Context, app, ref string) (string, string, err
 	if err != nil {
 		return "", "", err
 	}
-	repository, tag := imageOf(body)
+	ref, ok := pin.Line(body)
+	if !ok {
+		return "", "", nil
+	}
+	repository, tag := pin.ParseRef(ref)
 	return repository, tag, nil
 }
 

@@ -1,10 +1,7 @@
 package source
 
 import (
-	"bufio"
-	"bytes"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/ambrdk/ship/event"
@@ -50,34 +47,4 @@ func (r Report) hosts() []event.Host {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
-}
-
-func imageOf(appYML []byte) (repository, tag string) {
-	sc := bufio.NewScanner(bytes.NewReader(appYML))
-	for sc.Scan() {
-		value, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "image:")
-		if !ok {
-			continue
-		}
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		slash := strings.LastIndex(value, "/")
-		colon := strings.LastIndex(value, ":")
-		if colon > slash {
-			return value[:colon], value[colon+1:]
-		}
-		return value, ""
-	}
-	return "", ""
-}
-
-func bumpBranch(ref string) (app, tag string, ok bool) {
-	rest, ok := strings.CutPrefix(ref, "bump/")
-	if !ok {
-		return "", "", false
-	}
-	i := strings.LastIndex(rest, "-v")
-	if i <= 0 {
-		return "", "", false
-	}
-	return rest[:i], rest[i+1:], true
 }

@@ -135,6 +135,21 @@ func TestParsePullRequest(t *testing.T) {
 	if err != nil || len(got) != 0 {
 		t.Fatalf("non bump %+v err %v", got, err)
 	}
+	got, err = Parse(context.Background(), api, repo, "pull_request", []byte(prJSON("opened", false, "bump/notes")))
+	if err != nil || len(got) != 0 {
+		t.Fatalf("bump prefix without version %+v err %v", got, err)
+	}
+}
+
+func TestPullRequestToFromBranch(t *testing.T) {
+	f := &fakeGitHub{files: map[string]string{"b1:apps/alert-relay/app.yml": image("v0.2.2"), "h1:apps/alert-relay/app.yml": image("v0.2.4")}}
+	got, err := Parse(context.Background(), f.server(t), repo, "pull_request", []byte(prJSON("opened", false, "bump/alert-relay-v0.2.3")))
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got %+v err %v", got, err)
+	}
+	if e := got[0].Event; e.To != "v0.2.3" || e.From != "v0.2.2" || e.Image != "ghcr.io/ambrdk/alert-relay" {
+		t.Fatalf("event %+v", e)
+	}
 }
 
 func runJSON(name, action, ev, conclusion string, id int64, attempt int, prs string) string {
