@@ -27,7 +27,9 @@ jobs:
       - id: version
         env:
           CUTSHIP_DEPLOY_TOKEN: ${{ secrets.CUTSHIP_DEPLOY_TOKEN }}
-        run: echo "tag=$(cutship version next --deploy-repo acme/deploy --app api)" >> "$GITHUB_OUTPUT"
+        run: |
+          tag="$(cutship version next --deploy-repo acme/deploy --app api)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - if: steps.version.outputs.tag != ''
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

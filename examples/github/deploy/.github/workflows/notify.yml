@@ -7,10 +7,6 @@ on:
     workflows: [ci]
     types: [completed]
 
-concurrency:
-  group: notify
-  cancel-in-progress: false
-
 permissions:
   contents: read
 

@@ -14,6 +14,10 @@ jobs:
     outputs:
       lane: ${{ steps.lane.outputs.lane }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: cutship.yaml
+          sparse-checkout-cone-mode: false
       - uses: ambrdk/cutship@v0.3.0
       - id: lane
         if: github.event_name == 'pull_request'
@@ -21,7 +25,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           PR: ${{ github.event.number }}
         run: |
-          echo "lane=$(cutship lane --pr "$PR")" >> "$GITHUB_OUTPUT"
+          lane="$(cutship lane --pr "$PR")"
+          echo "lane=$lane" >> "$GITHUB_OUTPUT"
 
   fast:
     needs: lane
