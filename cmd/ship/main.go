@@ -19,6 +19,9 @@ commands:
   bump name <app> <tag>                    print branch= and title= of a bump pull request
   bump parse <ref>                         print "<app> <tag>" for a bump branch
   bump superseded <app> <tag> < branches   print open bump branches with a lower version
+  gate head --pulls <file>                 print the head sha of the merged bump pull request
+  gate skip --pulls <file> --checks <file> --pending <json|unknown>
+                                           print true when the deploy can skip ci
 `
 
 func main() {
@@ -41,6 +44,8 @@ func dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return laneCommand(args[1:], stdin, stdout, stderr)
 	case "bump":
 		return bumpCommand(args[1:], stdin, stdout, stderr)
+	case "gate":
+		return gateCommand(args[1:], stdout, stderr)
 	}
 	return usageError(stderr)
 }
