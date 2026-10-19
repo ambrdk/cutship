@@ -220,6 +220,7 @@ func (p *parser) walk(n *yaml.Node, t reflect.Type, path string) {
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			key := n.Content[i]
 			if key.Value == "<<" {
+				p.walkMerge(n.Content[i+1], t, path)
 				continue
 			}
 			child := join(path, key.Value)
@@ -241,6 +242,19 @@ func (p *parser) walk(n *yaml.Node, t reflect.Type, path string) {
 			p.walk(item, t.Elem(), child)
 		}
 	}
+}
+
+func (p *parser) walkMerge(n *yaml.Node, t reflect.Type, path string) {
+	if n.Kind == yaml.AliasNode {
+		n = n.Alias
+	}
+	if n.Kind == yaml.SequenceNode {
+		for _, item := range n.Content {
+			p.walkMerge(item, t, path)
+		}
+		return
+	}
+	p.walk(n, t, path)
 }
 
 func yamlFields(t reflect.Type) map[string]reflect.Type {

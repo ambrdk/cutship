@@ -129,6 +129,53 @@ func TestParseUnknownField(t *testing.T) {
 	}
 }
 
+func TestParseUnknownFieldInMergeKey(t *testing.T) {
+	data := `version: 1
+forge: { type: github }
+deploy_repo: ambrdk/ansible
+apps:
+  - &relay
+    name: alert-relay
+    image: ghcr.io/ambrdk/alert-relay
+    pin: { preset: ansible }
+  - <<: { pinn: { preset: ansible } }
+    name: api
+    image: ghcr.io/ambrdk/api
+    pin: { preset: ansible }
+  - <<: [*relay, { tag_prefx: x }]
+    name: web
+    image: ghcr.io/ambrdk/web
+<<: { lanes: { required_chek: x } }
+`
+	_, problems := config.Parse([]byte(data))
+	expect(t, problems, "apps[1].pinn", `unknown field "pinn"`)
+	expect(t, problems, "apps[2].tag_prefx", `unknown field "tag_prefx"`)
+	expect(t, problems, "lanes.required_chek", `unknown field "required_chek"`)
+	if len(problems) != 3 {
+		t.Errorf("problems = %v", problems)
+	}
+}
+
+func TestParseMergeKeyKnownFields(t *testing.T) {
+	data := `version: 1
+forge: { type: github }
+deploy_repo: ambrdk/ansible
+apps:
+  - &relay
+    name: alert-relay
+    image: ghcr.io/ambrdk/alert-relay
+    pin: { preset: ansible }
+  - <<: *relay
+    name: api
+    image: ghcr.io/ambrdk/api
+`
+	cfg, problems := config.Parse([]byte(data))
+	clean(t, problems)
+	if app, ok := cfg.App("api"); !ok || app.Pin.Preset != "ansible" {
+		t.Errorf("App(api) = %+v, %v", app, ok)
+	}
+}
+
 func TestParseBroken(t *testing.T) {
 	for name, data := range map[string]string{
 		"empty":    "",
