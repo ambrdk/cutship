@@ -10,6 +10,12 @@ const usage = `usage: ship <command> [arguments]
 
 commands:
   notify                                   post release and deploy events to Telegram
+  pin read [--root dir] <app>              print the pinned image of an app
+  pin check [--root dir] <app> <image> <tag>
+                                           print bump or same for a release tag
+  pin set [--root dir] <app> <image> <tag> pin an app to a release tag
+  pin verify [--root dir]                  check every app pin against the tag rule
+  lane < files.json                        print fast or full for a pull request
 `
 
 func main() {
@@ -26,6 +32,10 @@ func dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return usageError(stderr)
 		}
 		return notifyCommand(stderr)
+	case "pin":
+		return pinCommand(args[1:], stdout, stderr)
+	case "lane":
+		return laneCommand(args[1:], stdin, stdout, stderr)
 	}
 	return usageError(stderr)
 }
