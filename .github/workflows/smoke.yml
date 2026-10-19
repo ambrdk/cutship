@@ -1,0 +1,69 @@
+name: smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag to check, such as v0.3.0
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  action:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: cutship
+        uses: ./
+        with:
+          version: ${{ inputs.version }}
+      - env:
+          INSTALLED: ${{ steps.cutship.outputs.version }}
+        run: |
+          [[ "$INSTALLED" == "$VERSION" ]] || { echo "::error::action installed $INSTALLED"; exit 1; }
+          [[ "$(cutship --version)" == "cutship ${VERSION#v}" ]] || { echo "::error::cutship --version says $(cutship --version)"; exit 1; }
+
+  pinned:
+    runs-on: ubuntu-24.04
+    steps:
+      - id: cutship
+        uses: ambrdk/cutship@dc063d47893c1c1a1d65144c30c825bf2baab417 # v0.3.0
+      - env:
+          INSTALLED: ${{ steps.cutship.outputs.version }}
+        run: |
+          [[ "$INSTALLED" == v0.3.0 ]] || { echo "::error::action pinned to v0.3.0 installed $INSTALLED"; exit 1; }
+          [[ "$(cutship --version)" == "cutship 0.3.0" ]] || { echo "::error::cutship --version says $(cutship --version)"; exit 1; }
+
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: signature
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::$VERSION is not a release tag"; exit 1; }
+          gh release download "$VERSION" -R "$GITHUB_REPOSITORY" -p 'checksums.txt*' -p 'cutship_*_linux_amd64.tar.gz' -p cutship.schema.json -D release
+          cd release
+          cosign verify-blob \
+            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$VERSION" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --bundle checksums.txt.sigstore.json checksums.txt
+          sha256sum --check --ignore-missing checksums.txt
+          jq -e '.title == "cutship.yaml"' cutship.schema.json
+      - name: image
+        run: |
+          image="ghcr.io/$GITHUB_REPOSITORY:${VERSION#v}"
+          docker logout ghcr.io || true
+          docker pull "$image"
+          [[ "$(docker run --rm "$image" --version)" == "cutship ${VERSION#v}" ]]
+          docker pull --platform linux/arm64 "$image"
