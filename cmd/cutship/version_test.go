@@ -47,6 +47,16 @@ func TestVersionCLIFromDeployRepo(t *testing.T) {
 	}
 }
 
+func TestVersionCLIFromDeployRepoWithoutToken(t *testing.T) {
+	useForge(t, fake.New("bot"))
+	t.Setenv("CUTSHIP_DEPLOY_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	code, out, errOut := run(t, "", "version", "next", "--deploy-repo", "ambrdk/ansible", "--app", "alert-relay", "--dir", t.TempDir())
+	if code != 1 || out != "" || !strings.Contains(errOut, "::error::CUTSHIP_DEPLOY_TOKEN or GITHUB_TOKEN is required to read cutship.yaml from ambrdk/ansible") {
+		t.Fatalf("%d %q %q", code, out, errOut)
+	}
+}
+
 func TestVersionCLI(t *testing.T) {
 	cfg := writeConfig(t, goodConfig)
 	dir := gitRepo(t,

@@ -18,6 +18,15 @@ fail() {
 
 [[ -n "$ref" ]] || fail "no version or ref given"
 
+for tool in gh jq; do
+  command -v "$tool" >/dev/null 2>&1 || fail "$tool is not on PATH; GitHub-hosted runners have it, install it on a self-hosted runner"
+done
+
+tmp="$(mktemp -d)"
+gh_said() {
+  tr '\n' ' ' < "$tmp/gh.err" | sed 's/ *$//'
+}
+
 case "${RUNNER_OS:-$(uname -s)}" in
   Linux) os=linux ;;
   macOS | Darwin) os=darwin ;;
@@ -29,14 +38,13 @@ case "${RUNNER_ARCH:-$(uname -m)}" in
   *) fail "unsupported runner architecture ${RUNNER_ARCH:-$(uname -m)}" ;;
 esac
 
-tags="$(gh api "repos/$repo/tags" --paginate 2>/dev/null)" || fail "listing tags failed"
+tags="$(gh api "repos/$repo/tags" --paginate 2>"$tmp/gh.err")" || fail "listing tags failed: $(gh_said)"
 tag="$(printf '%s' "$tags" | "$dir/pick_tag.sh" "$ref")"
 [[ -n "$tag" ]] || fail "no release tag vX.Y.Z on that ref; pin the action to the commit of a release or set the version input"
 
 archive="cutship_${tag#v}_${os}_${arch}.tar.gz"
-tmp="$(mktemp -d)"
-gh release download "$tag" -R "$repo" -p "$archive" -p checksums.txt -D "$tmp" --clobber >/dev/null 2>&1 ||
-  fail "release $tag has no $archive or checksums.txt"
+gh release download "$tag" -R "$repo" -p "$archive" -p checksums.txt -D "$tmp" --clobber >/dev/null 2>"$tmp/gh.err" ||
+  fail "release $tag has no $archive or checksums.txt: $(gh_said)"
 
 want="$(awk -v f="$archive" '$2 == f { print $1 }' "$tmp/checksums.txt")"
 [[ -n "$want" ]] || fail "$archive is not in checksums.txt of $tag"
