@@ -99,7 +99,10 @@ jobs:
           telegram-token: ${{ secrets.TELEGRAM_DEPLOY_BOT_TOKEN }}
 ```
 
-All runs share one concurrency group with `queue: max`, so events are handled one at a time. That keeps the bot to one `getUpdates` reader and stops two events of the same release from overwriting each other's state.
+The concurrency group keeps notify runs in order, but it does not cover `cutship release` in service repositories or `cutship deploy` in the deploy workflow, and those publish with the same bot. Two things follow from that, and both are known limits of this version:
+
+- The bot reads `getUpdates` to find the copy of its post in the discussion group. Telegram allows one reader per token, so when two commands publish at the same moment one of them may get no copy, with a warning in the log; the next stage of that release looks for the copy again.
+- Each command re-reads the state right before it writes and publishes the newest version, so a post does not go back a stage. Two writes to the same state comment within the same second can still lose one timeline line.
 
 `workflow_run` only fires when the workflow file is on the default branch.
 
