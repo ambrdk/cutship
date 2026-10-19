@@ -172,28 +172,39 @@ func Set(root string, app config.App, rel config.Release, tag string) error {
 	if err != nil {
 		return err
 	}
+	updated, err := Replace(content, app, rel, tag)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, updated, info.Mode().Perm())
+}
+
+func Replace(content []byte, app config.App, rel config.Release, tag string) ([]byte, error) {
+	if _, ok := releaseVersion(rel, tag); !ok {
+		return nil, formatRule(rel, tag)
+	}
 	lines := strings.SplitAfter(string(content), "\n")
 	found := -1
 	for i, line := range lines {
 		if _, _, ok := parseLine(line); ok {
 			if found >= 0 {
-				return rule("%s must have exactly one top-level image", Path(app))
+				return nil, rule("%s must have exactly one top-level image", Path(app))
 			}
 			found = i
 		}
 	}
 	if found < 0 {
-		return rule("no top-level image in %s", Path(app))
+		return nil, rule("no top-level image in %s", Path(app))
 	}
 	line := lines[found]
 	body := strings.TrimRight(line, "\r\n")
 	_, quote, _ := parseLine(line)
 	lines[found] = "image: " + quote + app.Image + ":" + tag + quote + line[len(body):]
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "")), info.Mode().Perm())
+	return []byte(strings.Join(lines, "")), nil
 }
 
 func ImageOnly(cfg config.Config, files []forge.File) bool {

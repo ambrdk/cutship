@@ -11,6 +11,7 @@ This repository used to be `deploy-notify`; `cutship notify` is that tool.
 | `cutship validate [--config cutship.yaml]` | checks `cutship.yaml`, prints `::error file=,line=::` per problem |
 | `cutship schema` | prints the JSON Schema of `cutship.yaml` |
 | `cutship version next [--config cutship.yaml] --app <app> [--dir .]` | prints the next release tag from conventional commits since the last one, nothing when there is no release; needs the full history |
+| `cutship release --app <app> --tag <tag> --deploy-repo <owner/name> [--sha sha]` | after the image is pushed: checks its revision label, tags the service, closes older bumps and opens the bump with auto-merge; prints `outcome=bump\|same\|superseded`, `tag=`, `pr=`, `url=` |
 | `cutship notify` | keeps one Telegram post per release in sync with GitHub, see below |
 | `cutship pin read [--root dir] <app>` | prints the image pinned in `apps/<app>/app.yml` |
 | `cutship pin check [--root dir] <app> <tag>` | prints `bump` or `same`, fails when the tag breaks the rule |

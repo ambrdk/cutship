@@ -14,6 +14,8 @@ commands:
   validate                                 check cutship.yaml
   schema                                   print the JSON Schema of cutship.yaml
   version next --app <app> [--dir .]       print the next release tag, nothing when there is none
+  release --app <app> --tag <tag> --deploy-repo <owner/name> [--sha sha]
+                                           tag the service and open the bump in the deploy repository
   notify                                   post release and deploy events to Telegram
   pin read [--root dir] <app>              print the pinned image of an app
   pin check [--root dir] <app> <tag>       print bump or same for a release tag
@@ -43,6 +45,8 @@ func dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return schemaCommand(args[1:], stdout, stderr)
 	case "version":
 		return versionCommand(args[1:], stdout, stderr)
+	case "release":
+		return releaseCommand(args[1:], stdout, stderr)
 	case "notify":
 		return notifyCommand(args[1:], stderr)
 	case "pin":

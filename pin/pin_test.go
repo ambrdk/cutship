@@ -138,6 +138,28 @@ func TestCheckPlainFormat(t *testing.T) {
 	}
 }
 
+func TestReplaceKeepsBytes(t *testing.T) {
+	for _, body := range []string{
+		appYML(own + ":v0.2.3"),
+		appYML(`"` + own + `:v0.2.3"`),
+		appYML(`'` + own + `:v0.2.3'`),
+		"---\r\nimage: " + own + ":v0.2.3\r\nhealth_url: x\r\nvolumes: []",
+	} {
+		got, err := Replace([]byte(body), relayApp, rel, "v0.2.4")
+		if err != nil || string(got) != strings.Replace(body, "v0.2.3", "v0.2.4", 1) {
+			t.Errorf("%q: got %q err %v", body, got, err)
+		}
+	}
+	for _, bad := range []string{"---\nhealth_url: x\n", "image: a:v1.0.0\nimage: a:v1.0.0\n"} {
+		if _, err := Replace([]byte(bad), relayApp, rel, "v0.2.4"); !errors.Is(err, ErrRule) {
+			t.Errorf("%q: err %v", bad, err)
+		}
+	}
+	if _, err := Replace([]byte(appYML(own+":v0.2.3")), relayApp, rel, "0.2.4"); !errors.Is(err, ErrRule) {
+		t.Errorf("bad tag: %v", err)
+	}
+}
+
 func TestSetKeepsQuotes(t *testing.T) {
 	body := appYML(`"` + own + `:v0.2.3"`)
 	root := repo(t, map[string]string{"alert-relay": body})
