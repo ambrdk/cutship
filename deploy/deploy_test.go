@@ -387,6 +387,39 @@ func TestNonBumpDeployThread(t *testing.T) {
 	}
 }
 
+func TestDirectPushRerunKeepsPost(t *testing.T) {
+	r := setup(t)
+	pushed := r.commit(map[string][]byte{"apps/alert-relay/env.j2": []byte("A=11\n")})
+	first, n, _ := posting(t, r, pushed, "86-1")
+	if err := Start(ctx, r.f, r.f, r.cfg, first, []string{"alert-relay"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Finish(ctx, r.f, r.f, r.cfg, first, []string{"alert-relay"}, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.ID, second.Attempt, second.Now = "86-2", 2, t0.Add(time.Minute)
+	if err := Start(ctx, r.f, r.f, r.cfg, second, []string{"alert-relay"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Finish(ctx, r.f, r.f, r.cfg, second, []string{"alert-relay"}, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	last := n.Views[len(n.Views)-1].State
+	retried := slices.ContainsFunc(last.Timeline, func(l release.Line) bool { return l.Tag == "RETRY" })
+	if n.Posts() != 1 || last.Stage != release.Deployed || !retried {
+		t.Fatalf("posts %d stage %s timeline %+v", n.Posts(), last.Stage, last.Timeline)
+	}
+	third := second
+	third.ID, third.Attempt = "86-3", 3
+	if err := Finish(ctx, r.f, r.f, r.cfg, third, []string{"alert-relay"}, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n.Posts() != 1 {
+		t.Fatalf("finish-only rerun opened post %d", n.Posts())
+	}
+}
+
 func TestOtherAppsDoNotWriteIntoABump(t *testing.T) {
 	r := setup(t)
 	ch, head := r.mergeBump(t, "v0.3.1")

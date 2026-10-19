@@ -96,6 +96,18 @@ func TestLedgerCarriesData(t *testing.T) {
 	}
 }
 
+func TestAddAlwaysCreates(t *testing.T) {
+	f := fake.New("bot")
+	started, _ := StartWith(ctx, f, repo, "prod", "a", "s1", "", json.RawMessage(`{"v":1}`))
+	added, err := Add(ctx, f, repo, "prod", "a", "s1", false, "", json.RawMessage(`{"v":2}`))
+	if err != nil || added.ID == started.ID || added.State != forge.DeployFailure {
+		t.Fatalf("%+v %v", added, err)
+	}
+	if latest, _, _ := History(ctx, f, repo, "prod", "a"); latest.ID != added.ID || string(latest.Data) != `{"v":2}` {
+		t.Fatalf("%+v", latest)
+	}
+}
+
 func TestFinishWithoutStart(t *testing.T) {
 	f := fake.New("bot")
 	done, err := Finish(ctx, f, repo, "prod", "a", "s1", false, "https://log")

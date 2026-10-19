@@ -213,8 +213,14 @@ type thread struct {
 
 func (run Run) unanchored(ctx context.Context, d forge.Deployments, app string, e event.Event) json.RawMessage {
 	var t thread
-	if running, ok, err := ledger.Running(ctx, d, run.Repo, run.Env, app, run.SHA); err == nil && ok && len(running.Data) > 0 {
-		_ = json.Unmarshal(running.Data, &t)
+	latest, ok, err := ledger.Latest(ctx, d, run.Repo, run.Env, app)
+	switch {
+	case err != nil:
+		run.warn(fmt.Sprintf("%s: cannot read the earlier deploy, the post starts over: %v", app, err))
+	case ok && latest.SHA == run.SHA && len(latest.Data) > 0:
+		if err := json.Unmarshal(latest.Data, &t); err != nil {
+			run.warn(fmt.Sprintf("%s: the earlier deploy's post data is unreadable, the post starts over: %v", app, err))
+		}
 	}
 	var changed bool
 	t.State, changed = release.Apply(t.State, e)
@@ -281,7 +287,15 @@ func Finish(ctx context.Context, f forge.Forge, d forge.Deployments, cfg config.
 			}
 		}
 		if !h.found {
-			if _, err := ledger.FinishWith(ctx, d, run.Repo, run.Env, app, run.SHA, succeeded, run.LogURL, run.unanchored(ctx, d, app, e)); err != nil {
+			data := run.unanchored(ctx, d, app, e)
+			if _, ok, err := ledger.Running(ctx, d, run.Repo, run.Env, app, run.SHA); err != nil {
+				return fmt.Errorf("ledger %s: %w", app, err)
+			} else if ok {
+				if _, err := ledger.Finish(ctx, d, run.Repo, run.Env, app, run.SHA, succeeded, run.LogURL); err != nil {
+					return fmt.Errorf("ledger %s: %w", app, err)
+				}
+			}
+			if _, err := ledger.Add(ctx, d, run.Repo, run.Env, app, run.SHA, succeeded, run.LogURL, data); err != nil {
 				return fmt.Errorf("ledger %s: %w", app, err)
 			}
 			continue

@@ -109,6 +109,22 @@ func set(ctx context.Context, d forge.Deployments, repo, env, app, sha string, s
 	return e, nil
 }
 
+func Add(ctx context.Context, d forge.Deployments, repo, env, app, sha string, succeeded bool, logURL string, data json.RawMessage) (Entry, error) {
+	e, err := create(ctx, d, repo, env, app, sha, data)
+	if err != nil {
+		return Entry{}, err
+	}
+	state := forge.DeployFailure
+	if succeeded {
+		state = forge.DeploySuccess
+	}
+	if err := d.SetDeploymentState(ctx, repo, e.ID, state, logURL); err != nil {
+		return Entry{}, err
+	}
+	e.State = state
+	return e, nil
+}
+
 func Start(ctx context.Context, d forge.Deployments, repo, env, app, sha, logURL string) (Entry, error) {
 	return StartWith(ctx, d, repo, env, app, sha, logURL, nil)
 }
