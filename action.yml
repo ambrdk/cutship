@@ -1,14 +1,11 @@
 name: cutship notify
-description: Keep one Telegram post per release up to date from pull request and deploy events
+description: Add pull request and CI events of bump pull requests to the release post
 inputs:
   telegram-token:
-    description: Token of the bot that posts release threads
-    required: true
-  telegram-channel-id:
-    description: Numeric id of the Telegram channel
+    description: Token of the bot that posts release threads; the chat comes from notify in cutship.yaml
     required: true
   github-token:
-    description: Token that can read the repository, its runs and artifacts, and write pull request comments
+    description: Token that can read the repository and write pull request comments
     required: false
     default: ${{ github.token }}
 runs:
@@ -41,7 +38,6 @@ runs:
         BINARY: ${{ steps.release.outputs.binary || steps.build.outputs.binary }}
         VERSION: ${{ steps.release.outputs.version || 'source' }}
         TELEGRAM_BOT_TOKEN: ${{ inputs.telegram-token }}
-        TELEGRAM_CHANNEL_ID: ${{ inputs.telegram-channel-id }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         echo "cutship $VERSION"

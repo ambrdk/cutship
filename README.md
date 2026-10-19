@@ -41,25 +41,27 @@ The rules are written down in `CONTEXT.md` here and in the deploy repository.
 
 `setup` puts the binary on `PATH`. Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `cutship_linux_amd64`; setup finds the newest version tag on the commit it is pinned to (a SHA, a version tag or `v1`) and downloads that binary in a few seconds. Pinned to a branch or a commit without a release, it builds from source. The `version` input installs a given release instead of the pinned one and fails the job when that release cannot be downloaded, so a pipeline never runs a different cutship than it asked for. The `version` output says what was installed.
 
+## Release posts
+
+Each release gets one Telegram post that the commands themselves keep up to date. `cutship release` creates it (📦 waiting for merge), `cutship deploy start` moves it to 🔀 merged and 🚀 deploying, and `cutship deploy finish` ends it with ✅ or ❌ and the hosts from the deploy report. Under the post, in the channel's discussion group, one comment holds the details and a timeline. Both messages are edited in place. The chat is `notify[].chat_id` in `cutship.yaml`, the bot token comes from `TELEGRAM_BOT_TOKEN`.
+
+There is no server. Between runs, the state of each release lives in a hidden comment on the bump pull request: a link to the post followed by `<!-- cutship:v1 {json} -->`. Comments of the older `deploy-notify:v1` format are read and rewritten in the new one, so a post started before the move keeps being edited. A deploy that is not a bump keeps its state on the merged pull request it came from, or, for a direct push, in the payload of its GitHub Deployment.
+
+If Telegram fails, the command still does its job and prints a `::warning::` with the reason; the next stage publishes the post with the whole history.
+
+Repeated events change nothing: every event has an id, and seen ids are kept in the state. A re-run after a failure turns ❌ into ✅ and adds `[RETRY]` to the timeline.
+
 ## cutship notify
 
-Keeps one Telegram post per release in sync with what GitHub does to it. A release is a bump pull request in the deploy repository (`bump/<app>-<tag>`, opened by `ci-templates` image-release). The post in the channel goes from 📦 waiting for merge to 🔀 merged, 🚀 deploying, and then ✅, ❌ or ⚪. Under it, in the channel's discussion group, one comment holds the details and a timeline. Both messages are edited in place, the same way alert-relay handles alerts.
-
-It runs as a step in a workflow of the deploy repository and exits. There is no server. Between runs, the state of each release lives in a hidden comment of the bot on the bump pull request: a link to the post followed by `<!-- deploy-notify:v1 {json} -->`. If that comment is deleted or edited past recognition, the next event starts a new post.
-
-### Events
+An optional step for two things the commands cannot see: the result of the bump's CI and a bump closed without a merge.
 
 | GitHub event | What it does |
 |---|---|
-| `pull_request` opened / reopened on `bump/*` | creates the post or brings a closed one back |
-| `workflow_run` of `ci` completed for a `bump/*` pull request | adds the check result |
+| `pull_request` opened / reopened on a bump branch | creates the post or brings a closed one back |
+| `workflow_run` of `lanes.ci_workflow` (default `ci`) completed for a bump | adds the check result |
 | `pull_request` closed | merged by …, or ⚪ not merged |
-| `workflow_run` of `deploy` requested | 🚀 for the pull request merged by that push |
-| `workflow_run` of `deploy` completed | result per app, hosts from the `deploy-report` artifact |
 
-A deploy started with `workflow_dispatch`, or a push without a pull request, gets its own post when it finishes and is not tracked further. A pushed change that is not a bump (an edited `env.j2`, say) opens a thread on its pull request when the deploy starts.
-
-Repeated events change nothing: every event has an id that includes the run attempt, and seen ids are kept in the state. A re-run after a failure turns ❌ into ✅ and adds `[RETRY]` to the timeline.
+`notify` reads `cutship.yaml` from the repository through the API, so the workflow needs no checkout.
 
 ### Telegram setup
 
@@ -69,7 +71,7 @@ Repeated events change nothing: every event has an id that includes the run atte
 
 ### Workflow
 
-In the deploy repository, with repository secrets `TELEGRAM_DEPLOY_BOT_TOKEN` and `TELEGRAM_DEPLOY_CHANNEL_ID`:
+In the deploy repository, with the repository secret `TELEGRAM_DEPLOY_BOT_TOKEN`:
 
 ```yaml
 name: notify
@@ -78,8 +80,8 @@ on:
   pull_request:
     types: [opened, reopened, closed]
   workflow_run:
-    workflows: [ci, deploy]
-    types: [requested, completed]
+    workflows: [ci]
+    types: [completed]
 
 jobs:
   update:
@@ -91,12 +93,10 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-      actions: read
     steps:
       - uses: ambrdk/cutship@<sha> # vX.Y.Z
         with:
           telegram-token: ${{ secrets.TELEGRAM_DEPLOY_BOT_TOKEN }}
-          telegram-channel-id: ${{ secrets.TELEGRAM_DEPLOY_CHANNEL_ID }}
 ```
 
 All runs share one concurrency group with `queue: max`, so events are handled one at a time. That keeps the bot to one `getUpdates` reader and stops two events of the same release from overwriting each other's state.
@@ -105,16 +105,16 @@ All runs share one concurrency group with `queue: max`, so events are handled on
 
 ### Environment
 
-The action sets these for `cutship notify`:
+`release`, `deploy` and `notify` read these:
 
 | Variable | Meaning |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | bot token |
-| `TELEGRAM_CHANNEL_ID` | channel id, `-100...` |
-| `GITHUB_TOKEN` | reads the repository, runs and artifacts, writes pull request comments |
+| `TELEGRAM_BOT_TOKEN` | bot token, needed when `notify` in `cutship.yaml` has a telegram entry |
+| `GITHUB_TOKEN` | reads the repository, writes pull request comments and deployments |
+| `CUTSHIP_DEPLOY_TOKEN` | `release` only: opens the bump in the deploy repository |
 | `TELEGRAM_API_URL` | optional Bot API base URL |
 
-`GITHUB_REPOSITORY`, `GITHUB_EVENT_NAME`, `GITHUB_EVENT_PATH` and `GITHUB_API_URL` come from Actions.
+`GITHUB_REPOSITORY`, `GITHUB_EVENT_NAME`, `GITHUB_EVENT_PATH`, `GITHUB_SHA` and `GITHUB_API_URL` come from Actions.
 
 ## Development
 

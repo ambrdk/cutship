@@ -8,7 +8,8 @@ import (
 
 const usage = `usage: cutship <command> [arguments]
 
-Every command except schema reads cutship.yaml, or the file given with --config.
+Most commands read cutship.yaml, or the file given with --config; release and notify read it
+from the deploy repository through the API.
 
 commands:
   validate [--online]                      check cutship.yaml; --online also checks the deploy repository, token and images
@@ -22,7 +23,7 @@ commands:
                                            record the deploy of these apps as started
   deploy finish --apps <json> --result success|failure [--report deploy-report.json] [--sha sha] [--env env]
                                            record the result of the deploy
-  notify                                   post release and deploy events to Telegram
+  notify [--repo owner/name]               add a GitHub pull_request or ci workflow_run event to the release post
   pin read [--root dir] <app>              print the pinned image of an app
   pin check [--root dir] <app> <tag>       print bump or same for a release tag
   pin set [--root dir] <app> <tag>         pin an app to a release tag

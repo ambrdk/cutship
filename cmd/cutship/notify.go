@@ -3,85 +3,58 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
-	"time"
 
 	"github.com/ambrdk/cutship/config"
-	"github.com/ambrdk/cutship/github"
+	"github.com/ambrdk/cutship/cut"
 	"github.com/ambrdk/cutship/notify"
-	"github.com/ambrdk/cutship/source"
-	"github.com/ambrdk/cutship/store"
-	"github.com/ambrdk/notifykit/telegram"
-	"github.com/ambrdk/notifykit/thread"
+	"github.com/ambrdk/cutship/post"
 )
 
-const copyWait = 30 * time.Second
-
 func notifyCommand(args []string, stderr io.Writer) int {
-	path, rest, err := configFlags("notify", args)
-	if err != nil || len(rest) != 0 {
+	fs := flag.NewFlagSet("notify", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "")
+	if fs.Parse(args) != nil || fs.NArg() != 0 {
 		return usageError(stderr)
 	}
-	rel, ok := releaseConfig(path, stderr)
-	if !ok {
-		return 1
-	}
-	log := slog.New(slog.NewTextHandler(stderr, nil))
-	slog.SetDefault(log)
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	if err := runNotify(ctx, log, rel); err != nil {
-		log.Error("cutship notify failed", "error", err)
-		return 1
-	}
-	return 0
-}
-
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func runNotify(ctx context.Context, log *slog.Logger, rel config.Release) error {
-	repo, eventName, eventPath := os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_EVENT_NAME"), os.Getenv("GITHUB_EVENT_PATH")
-	token, channel, ghToken := os.Getenv("TELEGRAM_BOT_TOKEN"), os.Getenv("TELEGRAM_CHANNEL_ID"), os.Getenv("GITHUB_TOKEN")
-	if repo == "" || eventName == "" || eventPath == "" || token == "" || channel == "" || ghToken == "" {
-		return errors.New("GITHUB_REPOSITORY, GITHUB_EVENT_NAME, GITHUB_EVENT_PATH, GITHUB_TOKEN, TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID are required")
+	eventName, eventPath := os.Getenv("GITHUB_EVENT_NAME"), os.Getenv("GITHUB_EVENT_PATH")
+	if *repo == "" || eventName == "" || eventPath == "" {
+		return fail(stderr, errors.New("GITHUB_REPOSITORY, GITHUB_EVENT_NAME and GITHUB_EVENT_PATH are required"))
 	}
 	payload, err := os.ReadFile(eventPath)
 	if err != nil {
-		return err
+		return fail(stderr, err)
 	}
-	api := github.New(env("GITHUB_API_URL", "https://api.github.com"), ghToken)
-	events, err := source.Parse(ctx, api, rel, repo, eventName, payload)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	f, err := openForge(config.Config{}, os.Getenv("GITHUB_TOKEN"))
 	if err != nil {
-		return err
+		return fail(stderr, err)
 	}
-	if len(events) == 0 {
-		log.Info("nothing to post", "event", eventName)
-		return nil
-	}
-	tg, err := telegram.New(token, os.Getenv("TELEGRAM_API_URL"), log)
+	cfg, _, err := cut.LoadConfig(ctx, f, *repo)
 	if err != nil {
-		return err
+		return reportError(stderr, err)
 	}
-	th := thread.New(tg, channel, thread.Waiting(tg, copyWait))
-	st := store.NewPRComment(api, repo, func(r store.Record) string { return postLink(channel, r.IDs.PostID) })
-	return notify.Handle(ctx, events, st, th, log)
-}
-
-func postLink(channel string, postID int64) string {
-	internal, ok := strings.CutPrefix(channel, "-100")
-	if !ok || postID == 0 {
-		return "Telegram release thread"
+	items, err := notify.Parse(ctx, f, cfg, *repo, eventName, payload)
+	if err != nil {
+		return fail(stderr, err)
 	}
-	return fmt.Sprintf("Telegram release thread: https://t.me/c/%s/%d", internal, postID)
+	if len(items) == 0 {
+		return 0
+	}
+	warn := func(w string) { _, _ = fmt.Fprintf(stderr, "::warning::%s\n", w) }
+	ns, err := notifiersFor(stderr)(cfg)
+	if err != nil {
+		warn("the event is recorded without a post: " + err.Error())
+	}
+	if err := notify.Handle(ctx, items, post.New(f, *repo, ns, warn)); err != nil {
+		return fail(stderr, err)
+	}
+	return 0
 }
