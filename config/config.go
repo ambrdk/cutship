@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"reflect"
@@ -104,11 +106,20 @@ func Load(path string) (Config, []Problem) {
 
 func Parse(data []byte) (Config, []Problem) {
 	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+		return Config{}, []Problem{{Message: "config is empty"}}
+	} else if err != nil {
 		return Config{}, yamlProblems(err, nil)
 	}
 	if len(doc.Content) == 0 {
 		return Config{}, []Problem{{Message: "config is empty"}}
+	}
+	var extra yaml.Node
+	if err := dec.Decode(&extra); err == nil {
+		return Config{}, []Problem{{Line: extra.Line, Message: "config must be one YAML document, found another"}}
+	} else if !errors.Is(err, io.EOF) {
+		return Config{}, yamlProblems(err, nil)
 	}
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {

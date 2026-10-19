@@ -176,6 +176,16 @@ apps:
 	}
 }
 
+func TestParseSecondDocument(t *testing.T) {
+	_, problems := config.Parse([]byte(base + "---\nlanes:\n  required_check: ci\n"))
+	if len(problems) != 1 || !strings.Contains(problems[0].Error(), "one YAML document") || problems[0].Line != 12 {
+		t.Errorf("problems = %v", problems)
+	}
+	if _, problems := config.Parse([]byte("---\n" + base)); len(problems) != 0 {
+		t.Errorf("leading document marker: %v", problems)
+	}
+}
+
 func TestParseBroken(t *testing.T) {
 	for name, data := range map[string]string{
 		"empty":    "",
