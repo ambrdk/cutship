@@ -78,7 +78,7 @@ func (Config) JSONSchemaExtend(s *jsonschema.Schema) {
 
 func (Forge) JSONSchemaExtend(s *jsonschema.Schema) {
 	describe(s, map[string]string{
-		"type": "Forge type. gitlab is planned. The token comes from GITHUB_TOKEN.",
+		"type": "Forge type. gitlab is planned. Tokens come from GITHUB_TOKEN and, for release from a service, CUTSHIP_DEPLOY_TOKEN.",
 		"url":  "API base URL for a self-hosted forge. Empty means the public one.",
 	})
 	property(s, "type").Enum = enum("github")
@@ -159,7 +159,7 @@ func (Lanes) JSONSchemaExtend(s *jsonschema.Schema) {
 func (Notifier) JSONSchemaExtend(s *jsonschema.Schema) {
 	describe(s, map[string]string{
 		"type":     "Messenger. telegram uses the bot token from TELEGRAM_BOT_TOKEN. slack is planned.",
-		"mode":     "Telegram mode. channel: a post in a channel and its comment in the discussion group. topics is planned.",
+		"mode":     "Telegram mode. channel (the default): a post in a channel and its comment in the discussion group. topics is planned.",
 		"chat_id":  "Telegram chat id, -100... for a channel.",
 		"topic_id": "Telegram topic id for mode topics, planned.",
 		"channel":  "Slack channel id, planned.",

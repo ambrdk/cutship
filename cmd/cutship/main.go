@@ -30,7 +30,7 @@ commands:
   pin check [--root dir] <app> <tag>       print bump or same for a release tag
   pin set [--root dir] <app> <tag>         pin an app to a release tag
   pin verify [--root dir]                  check every app pin against the tag rule
-  lane < files.json                        print fast or full for a pull request
+  lane --pr <n> | lane < files.json        print fast or full for a pull request
   bump name <app> <tag>                    print branch= and title= of a bump pull request
   bump parse <ref>                         print "<app> <tag>" for a bump branch
   bump superseded <app> <tag> < branches   print open bump branches with a lower version

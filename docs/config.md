@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `version` | integer | yes | Version of this file format. Only 1 exists. Allowed now: `1`. |
 | `forge` | object | yes | Where the deploy repository and the service repositories live. |
-| `forge.type` | string | yes | Forge type. gitlab is planned. The token comes from GITHUB_TOKEN. Allowed now: `github`. |
+| `forge.type` | string | yes | Forge type. gitlab is planned. Tokens come from GITHUB_TOKEN and, for release from a service, CUTSHIP_DEPLOY_TOKEN. Allowed now: `github`. |
 | `forge.url` | string | no | API base URL for a self-hosted forge. Empty means the public one. |
 | `deploy_repo` | string | yes | Deploy repository as owner/name. Bump pull requests go there. |
 | `environments` | list of strings | no | Environments the apps are deployed to. Default [prod]. Promotion between environments is planned. |
@@ -28,7 +28,7 @@
 | `lanes.ci_workflow` | string | no | Name of the workflow whose result cutship notify adds to the release post. Default ci. |
 | `notify` | list of objects | no | Messengers that get one post per release. |
 | `notify[].type` | string | yes | Messenger. telegram uses the bot token from TELEGRAM_BOT_TOKEN. slack is planned. Allowed now: `telegram`. |
-| `notify[].mode` | string | no | Telegram mode. channel: a post in a channel and its comment in the discussion group. topics is planned. Allowed now: `channel`. |
+| `notify[].mode` | string | no | Telegram mode. channel (the default): a post in a channel and its comment in the discussion group. topics is planned. Allowed now: `channel`. |
 | `notify[].chat_id` | string or integer | yes | Telegram chat id, -100... for a channel. |
 | `notify[].topic_id` | integer | no | Telegram topic id for mode topics, planned. Allowed now: `0`. |
 | `notify[].channel` | string | no | Slack channel id, planned. |
