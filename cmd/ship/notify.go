@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -11,29 +12,26 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ambrdk/deploy-notify/github"
-	"github.com/ambrdk/deploy-notify/notify"
-	"github.com/ambrdk/deploy-notify/source"
-	"github.com/ambrdk/deploy-notify/store"
+	"github.com/ambrdk/ship/github"
+	"github.com/ambrdk/ship/notify"
+	"github.com/ambrdk/ship/source"
+	"github.com/ambrdk/ship/store"
 	"github.com/ambrdk/notifykit/telegram"
 	"github.com/ambrdk/notifykit/thread"
 )
 
 const copyWait = 30 * time.Second
 
-func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+func notifyCommand(stderr io.Writer) int {
+	log := slog.New(slog.NewTextHandler(stderr, nil))
 	slog.SetDefault(log)
-	if len(os.Args) != 2 || os.Args[1] != "handle" {
-		fmt.Fprintln(os.Stderr, "usage: deploy-notify handle")
-		os.Exit(2)
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, log); err != nil {
-		log.Error("deploy-notify failed", "error", err)
-		os.Exit(1)
+	if err := runNotify(ctx, log); err != nil {
+		log.Error("ship notify failed", "error", err)
+		return 1
 	}
+	return 0
 }
 
 func env(key, fallback string) string {
@@ -43,7 +41,7 @@ func env(key, fallback string) string {
 	return fallback
 }
 
-func run(ctx context.Context, log *slog.Logger) error {
+func runNotify(ctx context.Context, log *slog.Logger) error {
 	repo, eventName, eventPath := os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_EVENT_NAME"), os.Getenv("GITHUB_EVENT_PATH")
 	token, channel, ghToken := os.Getenv("TELEGRAM_BOT_TOKEN"), os.Getenv("TELEGRAM_CHANNEL_ID"), os.Getenv("GITHUB_TOKEN")
 	if repo == "" || eventName == "" || eventPath == "" || token == "" || channel == "" || ghToken == "" {

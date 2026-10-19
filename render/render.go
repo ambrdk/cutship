@@ -8,8 +8,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/ambrdk/deploy-notify/event"
-	"github.com/ambrdk/deploy-notify/release"
+	"github.com/ambrdk/ship/event"
+	"github.com/ambrdk/ship/release"
 )
 
 //go:embed post.tmpl comment.tmpl

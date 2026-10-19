@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/ambrdk/deploy-notify/event"
-	"github.com/ambrdk/deploy-notify/release"
-	"github.com/ambrdk/deploy-notify/render"
-	"github.com/ambrdk/deploy-notify/source"
-	"github.com/ambrdk/deploy-notify/store"
+	"github.com/ambrdk/ship/event"
+	"github.com/ambrdk/ship/release"
+	"github.com/ambrdk/ship/render"
+	"github.com/ambrdk/ship/source"
+	"github.com/ambrdk/ship/store"
 	"github.com/ambrdk/notifykit/thread"
 )
 

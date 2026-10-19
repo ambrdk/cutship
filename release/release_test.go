@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ambrdk/deploy-notify/event"
+	"github.com/ambrdk/ship/event"
 )
 
 var t0 = time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC)

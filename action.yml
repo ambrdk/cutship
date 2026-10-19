@@ -43,12 +43,12 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
       run: |
-        go build -o "$RUNNER_TEMP/deploy-notify/deploy-notify_linux_amd64" ./cmd/deploy-notify
-        echo "binary=$RUNNER_TEMP/deploy-notify/deploy-notify_linux_amd64" >> "$GITHUB_OUTPUT"
+        go build -o "$RUNNER_TEMP/deploy-notify/ship" ./cmd/ship
+        echo "binary=$RUNNER_TEMP/deploy-notify/ship" >> "$GITHUB_OUTPUT"
     - shell: bash
       env:
         BINARY: ${{ steps.release.outputs.binary || steps.build.outputs.binary }}
         TELEGRAM_BOT_TOKEN: ${{ inputs.telegram-token }}
         TELEGRAM_CHANNEL_ID: ${{ inputs.telegram-channel-id }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
-      run: '"$BINARY" handle'
+      run: '"$BINARY" notify'

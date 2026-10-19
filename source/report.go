@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ambrdk/deploy-notify/event"
+	"github.com/ambrdk/ship/event"
 )
 
 type ReportHost struct {

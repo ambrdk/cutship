@@ -1,4 +1,4 @@
-module github.com/ambrdk/deploy-notify
+module github.com/ambrdk/ship
 
 go 1.26.0
 
