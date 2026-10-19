@@ -11,9 +11,10 @@ import (
 	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/event"
 	"github.com/ambrdk/cutship/forge"
+	"github.com/ambrdk/cutship/notifier"
 	"github.com/ambrdk/cutship/pin"
+	"github.com/ambrdk/cutship/post"
 	"github.com/ambrdk/cutship/registry"
-	"github.com/ambrdk/cutship/release"
 	"github.com/ambrdk/cutship/state"
 )
 
@@ -34,6 +35,7 @@ type Input struct {
 	ServiceRepo string
 	DeployRepo  string
 	Now         time.Time
+	Notifiers   func(config.Config) ([]notifier.Notifier, error)
 }
 
 type Result struct {
@@ -172,11 +174,15 @@ func Release(ctx context.Context, service, deploy forge.Forge, reg registry.Regi
 		PR:    ch.Number,
 		PRURL: ch.URL,
 	}
-	env := cfg.Environments[0]
-	if _, err := state.New(deploy, in.DeployRepo, Link).Update(ctx, ch, func(r *state.Record) {
-		r.App, r.Env, r.Tag = app.Name, env, in.Tag
-		r.State, _ = release.Apply(r.State, e)
-	}); err != nil {
+	var ns []notifier.Notifier
+	if in.Notifiers != nil {
+		if ns, err = in.Notifiers(cfg); err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("the release goes on without a post: %v", err))
+		}
+	}
+	p := post.New(deploy, in.DeployRepo, ns, func(w string) { res.Warnings = append(res.Warnings, w) })
+	target := post.Target{Change: ch, App: app.Name, Env: cfg.Environments[0], Tag: in.Tag}
+	if _, err := p.Apply(ctx, target, e); err != nil {
 		return Result{}, fmt.Errorf("save the release state on #%d: %w", ch.Number, err)
 	}
 	if am, ok := deploy.(forge.AutoMerger); ok {

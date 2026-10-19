@@ -6,15 +6,27 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"time"
 
 	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/cut"
+	"github.com/ambrdk/cutship/notifier"
+	"github.com/ambrdk/cutship/notifier/notifiers"
 	"github.com/ambrdk/cutship/registry"
 )
 
 var newRegistry = registry.New
+
+var openNotifiers = notifiers.FromConfig
+
+func notifiersFor(stderr io.Writer) func(config.Config) ([]notifier.Notifier, error) {
+	log := slog.New(slog.NewTextHandler(stderr, nil))
+	return func(cfg config.Config) ([]notifier.Notifier, error) {
+		return openNotifiers(cfg, os.Getenv, log)
+	}
+}
 
 func reportError(stderr io.Writer, err error) int {
 	var cfgErr *cut.ConfigError
@@ -57,6 +69,7 @@ func releaseCommand(args []string, stdout, stderr io.Writer) int {
 		ServiceRepo: *serviceRepo,
 		DeployRepo:  *deployRepo,
 		Now:         time.Now().UTC(),
+		Notifiers:   notifiersFor(stderr),
 	})
 	for _, w := range res.Warnings {
 		_, _ = fmt.Fprintf(stderr, "::warning::%s\n", w)

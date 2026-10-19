@@ -77,6 +77,11 @@ func (c *Channel) Publish(ctx context.Context, ref json.RawMessage, v render.Vie
 	return raw, status(out.Status), err
 }
 
+func (c *Channel) Done(ref json.RawMessage) bool {
+	var ids thread.IDs
+	return len(ref) > 0 && json.Unmarshal(ref, &ids) == nil && ids.PostID != 0 && ids.CommentID != 0
+}
+
 func (c *Channel) Link(ref json.RawMessage) string {
 	var ids thread.IDs
 	if len(ref) == 0 || json.Unmarshal(ref, &ids) != nil || ids.PostID == 0 {

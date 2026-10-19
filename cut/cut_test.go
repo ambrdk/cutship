@@ -8,8 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ambrdk/cutship/config"
 	"github.com/ambrdk/cutship/forge"
 	"github.com/ambrdk/cutship/forge/fake"
+	"github.com/ambrdk/cutship/notifier"
+	nfake "github.com/ambrdk/cutship/notifier/fake"
 	"github.com/ambrdk/cutship/registry"
 )
 
@@ -230,6 +233,53 @@ func TestReleaseRejectsInput(t *testing.T) {
 	var cfgErr *ConfigError
 	if _, err := w.run(); !errors.As(err, &cfgErr) || cfgErr.File != "ambrdk/ansible:cutship.yaml" || len(cfgErr.Problems) == 0 {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func withNotifier(w *world) *nfake.Notifier {
+	n := nfake.New("telegram:-100123")
+	w.in.Notifiers = func(cfg config.Config) ([]notifier.Notifier, error) {
+		if cfg.DeployRepo != deployRepo {
+			return nil, errors.New("config not passed")
+		}
+		return []notifier.Notifier{n}, nil
+	}
+	return n
+}
+
+func TestReleasePosts(t *testing.T) {
+	w := setup(t, "v0.3.0")
+	n := withNotifier(w)
+	res, err := w.run()
+	if err != nil || res.Outcome != Bumped || n.Published() != 1 || len(res.Warnings) != 0 {
+		t.Fatalf("%+v %v published %d", res, err, n.Published())
+	}
+	if got := n.Views[0].State.Stage; got != "opened" {
+		t.Fatalf("stage %s", got)
+	}
+	comments := w.dep.CommentsOf(deployRepo, res.Change.Number)
+	if len(comments) != 1 || !strings.HasPrefix(comments[0].Body, "Release thread: https://chat.test/") {
+		t.Fatalf("comments %+v", comments)
+	}
+}
+
+func TestReleaseSurvivesNotifierFailure(t *testing.T) {
+	w := setup(t, "v0.3.0")
+	n := withNotifier(w)
+	n.FailNext(errors.New("telegram is down"))
+	res, err := w.run()
+	if err != nil || res.Outcome != Bumped || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "telegram is down") {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if comments := w.dep.CommentsOf(deployRepo, res.Change.Number); len(comments) != 1 || !w.dep.AutoMergeOn(deployRepo, res.Change.Number) {
+		t.Fatalf("comments %+v", comments)
+	}
+	w.in.Notifiers = func(config.Config) ([]notifier.Notifier, error) {
+		return nil, errors.New("TELEGRAM_BOT_TOKEN is required")
+	}
+	res, err = w.run()
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "TELEGRAM_BOT_TOKEN") {
+		t.Fatalf("%+v %v", res, err)
 	}
 }
 

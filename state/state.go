@@ -101,7 +101,7 @@ func parse(change int, body string) (Record, bool) {
 	return Record{}, false
 }
 
-func (s *Store) find(ctx context.Context, ch forge.Change) (int64, Record, bool, error) {
+func (s *Store) find(ctx context.Context, ch forge.Change, app string) (int64, Record, bool, error) {
 	self, err := s.self(ctx)
 	if err != nil {
 		return 0, Record{}, false, err
@@ -111,40 +111,54 @@ func (s *Store) find(ctx context.Context, ch forge.Change) (int64, Record, bool,
 	if err != nil {
 		return 0, Record{}, false, err
 	}
-	var fallback *forge.Comment
-	for i := range comments {
-		c := &comments[i]
+	var broken, old int64
+	var oldRecord Record
+	for _, c := range comments {
 		if c.Author != self && (ch.Author == "" || c.Author != ch.Author) {
 			continue
 		}
-		if strings.Contains(c.Body, anyMarker) {
+		switch {
+		case strings.Contains(c.Body, anyMarker):
 			r, ok := parse(change, c.Body)
-			return c.ID, r, ok, nil
-		}
-		if fallback == nil && strings.Contains(c.Body, oldAny) {
-			fallback = c
+			if !ok {
+				if broken == 0 {
+					broken = c.ID
+				}
+				continue
+			}
+			if r.App == app || r.App == "" {
+				return c.ID, r, true, nil
+			}
+		case old == 0 && strings.Contains(c.Body, oldAny):
+			if r, ok := parse(change, c.Body); ok && (r.App == app || r.App == "") {
+				old, oldRecord = c.ID, r
+			} else if !ok && broken == 0 {
+				broken = c.ID
+			}
 		}
 	}
-	if fallback != nil {
-		r, ok := parse(change, fallback.Body)
-		return fallback.ID, r, ok, nil
+	if old != 0 {
+		return old, oldRecord, true, nil
 	}
-	return 0, Record{}, false, nil
+	return broken, Record{}, false, nil
 }
 
-func (s *Store) Load(ctx context.Context, ch forge.Change) (Record, bool, error) {
-	_, r, ok, err := s.find(ctx, ch)
+func (s *Store) Load(ctx context.Context, ch forge.Change, app string) (Record, bool, error) {
+	_, r, ok, err := s.find(ctx, ch, app)
 	return r, ok, err
 }
 
-func (s *Store) Update(ctx context.Context, ch forge.Change, apply func(*Record)) (Record, error) {
+func (s *Store) Update(ctx context.Context, ch forge.Change, app string, apply func(*Record)) (Record, error) {
 	change := ch.Number
-	id, r, _, err := s.find(ctx, ch)
+	id, r, _, err := s.find(ctx, ch, app)
 	if err != nil {
 		return Record{}, err
 	}
 	apply(&r)
 	r.Version = Version
+	if r.App == "" {
+		r.App = app
+	}
 	raw, err := json.Marshal(r)
 	if err != nil {
 		return Record{}, err

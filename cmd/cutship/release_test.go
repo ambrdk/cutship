@@ -80,6 +80,16 @@ func TestReleaseCLIErrors(t *testing.T) {
 	}
 }
 
+func TestReleaseCLITelegramWithoutTokenWarns(t *testing.T) {
+	f, _ := releaseWorld(t)
+	f.Commit("ambrdk/ansible", "main", map[string][]byte{"cutship.yaml": []byte(ambrdkConfig + "notify:\n  - type: telegram\n    chat_id: \"-100123\"\n")})
+	t.Setenv("TELEGRAM_BOT_TOKEN", "")
+	code, out, errOut := run(t, "", "release", "--app", "alert-relay", "--tag", "v0.3.1", "--deploy-repo", "ambrdk/ansible")
+	if code != 0 || !strings.HasPrefix(out, "outcome=bump\n") || !strings.Contains(errOut, "::warning::the release goes on without a post: TELEGRAM_BOT_TOKEN is required") {
+		t.Fatalf("%d %q %q", code, out, errOut)
+	}
+}
+
 func TestReleaseCLIMissingDeployToken(t *testing.T) {
 	releaseWorld(t)
 	t.Setenv("CUTSHIP_DEPLOY_TOKEN", "")

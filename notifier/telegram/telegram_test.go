@@ -98,6 +98,20 @@ func TestTelegramBadRef(t *testing.T) {
 	}
 }
 
+func TestTelegramDone(t *testing.T) {
+	ch := NewChannel("-1", &fakeThread{})
+	for ref, want := range map[string]bool{
+		`{"post_id":5,"comment_id":7}`: true,
+		`{"post_id":5}`:                false,
+		``:                             false,
+		`{bad`:                         false,
+	} {
+		if got := ch.Done(json.RawMessage(ref)); got != want {
+			t.Errorf("%s: %v", ref, got)
+		}
+	}
+}
+
 func TestPostLink(t *testing.T) {
 	for _, c := range []struct {
 		chat string

@@ -22,6 +22,7 @@ type Notifier interface {
 	Key() string
 	Publish(ctx context.Context, ref json.RawMessage, v render.View) (json.RawMessage, Status, error)
 	Link(ref json.RawMessage) string
+	Done(ref json.RawMessage) bool
 }
 
 func Warning(s Status) string {
