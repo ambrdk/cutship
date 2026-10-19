@@ -31,7 +31,7 @@ The rules are written down in `CONTEXT.md` here and in the deploy repository.
 - run: ship pin check alert-relay ghcr.io/ambrdk/alert-relay "$TAG"
 ```
 
-`setup` puts the binary on `PATH`. Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `ship_linux_amd64`; setup finds the newest version tag on the commit it is pinned to (a SHA, a version tag or `v1`) and downloads that binary in a few seconds. Pinned to a branch or a commit without a release, it builds from source. The `version` input installs a given release instead of the pinned one, and the `version` output says what was installed.
+`setup` puts the binary on `PATH`. Every `vX.Y.Z` tag gets a GitHub Release with a prebuilt `ship_linux_amd64`; setup finds the newest version tag on the commit it is pinned to (a SHA, a version tag or `v1`) and downloads that binary in a few seconds. Pinned to a branch or a commit without a release, it builds from source. The `version` input installs a given release instead of the pinned one and fails the job when that release cannot be downloaded, so a pipeline never runs a different ship than it asked for. The `version` output says what was installed.
 
 ## ship notify
 

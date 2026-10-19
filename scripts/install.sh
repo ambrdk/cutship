@@ -11,15 +11,22 @@ ref="$2"
 dest="$3"
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-[[ -n "$ref" ]] || exit 0
-tags="$(gh api "repos/$repo/tags" --paginate 2>/dev/null)" || exit 0
+none() {
+  if [[ -n "${SHIP_REQUIRED:-}" ]]; then
+    echo "::error::cannot install ship $ref from $repo: $1" >&2
+    exit 1
+  fi
+  exit 0
+}
+
+[[ -n "$ref" ]] || none "no ref"
+tags="$(gh api "repos/$repo/tags" --paginate 2>/dev/null)" || none "listing tags failed"
 tag="$(printf '%s' "$tags" | "$dir/pick_tag.sh" "$ref")"
-[[ -n "$tag" ]] || exit 0
+[[ -n "$tag" ]] || none "no release tag on that ref"
 
 mkdir -p "$dest"
-if gh release download "$tag" -R "$repo" -p ship_linux_amd64 -D "$dest" --clobber >/dev/null 2>&1; then
-  mv "$dest/ship_linux_amd64" "$dest/ship"
-  chmod +x "$dest/ship"
-  echo "binary=$dest/ship"
-  echo "version=$tag"
-fi
+gh release download "$tag" -R "$repo" -p ship_linux_amd64 -D "$dest" --clobber >/dev/null 2>&1 || none "release $tag has no ship_linux_amd64"
+mv "$dest/ship_linux_amd64" "$dest/ship"
+chmod +x "$dest/ship"
+echo "binary=$dest/ship"
+echo "version=$tag"

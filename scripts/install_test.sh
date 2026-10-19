@@ -53,6 +53,26 @@ check() {
   fi
 }
 
+check_required() {
+  local name="$1" ref="$2" want_code="$3"
+  local out code
+  out="$(PATH="$work/bin:$PATH" FAKE_TAGS="$tags" FAKE_ASSETS="v0.3.0" SHIP_REQUIRED=1 "$dir/install.sh" ambrdk/ship "$ref" "$work/$name" 2>&1)"
+  code=$?
+  if [[ "$code" != "$want_code" ]]; then
+    echo "FAIL: $name: exit $code, want $want_code ($out)"
+    failed=$((failed + 1))
+    return
+  fi
+  if [[ "$want_code" != 0 && "$out" != *"::error::"* ]]; then
+    echo "FAIL: $name: no ::error:: in '$out'"
+    failed=$((failed + 1))
+  fi
+}
+
+check_required "required release" v0.3.0 0
+check_required "required release without asset" v0.2.0 1
+check_required "required unknown version" v9.9.9 1
+
 check "release with asset" ccc "binary=$work/release with asset/ship
 version=v0.3.0"
 check "moving tag" v1 "binary=$work/moving tag/ship

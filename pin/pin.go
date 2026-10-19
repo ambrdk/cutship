@@ -244,6 +244,9 @@ func Verify(root string) []error {
 	if err != nil {
 		return []error{err}
 	}
+	if len(dirs) == 0 {
+		return []error{rule("no apps found under %s", filepath.Join(root, "apps"))}
+	}
 	sort.Strings(dirs)
 	var errs []error
 	for _, file := range dirs {

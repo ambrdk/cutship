@@ -229,6 +229,12 @@ func TestVerify(t *testing.T) {
 	}
 }
 
+func TestVerifyWithoutApps(t *testing.T) {
+	if errs := Verify(t.TempDir()); len(errs) != 1 || !errors.Is(errs[0], ErrRule) || !strings.Contains(errs[0].Error(), "no apps") {
+		t.Fatalf("errors %v", errs)
+	}
+}
+
 func TestValidApp(t *testing.T) {
 	for name, want := range map[string]bool{"alert-relay": true, "a1": true, "Alert": false, "-a": false, "a b": false, "": false, "../x": false} {
 		if ValidApp(name) != want {

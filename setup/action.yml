@@ -2,7 +2,7 @@ name: ship setup
 description: Put the ship binary of the pinned ref on PATH, built from source when that ref has no release
 inputs:
   version:
-    description: Release tag of ship to install; defaults to the ref this action is pinned to
+    description: Release tag of ship to install, failing when it cannot be installed; without it the ref this action is pinned to is used and built from source when it has no release
     required: false
     default: ""
 outputs:
@@ -18,6 +18,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.action_repository }}
         REF: ${{ inputs.version || github.action_ref }}
+        SHIP_REQUIRED: ${{ inputs.version != '' && '1' || '' }}
       run: '"$GITHUB_ACTION_PATH/../scripts/install.sh" "$REPO" "$REF" "$RUNNER_TEMP/ship" >> "$GITHUB_OUTPUT"'
 
     - if: steps.release.outputs.binary == ''

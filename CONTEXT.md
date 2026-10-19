@@ -12,6 +12,6 @@
 
 **Notify.** The Telegram post of a release and its comment, kept in sync with GitHub events (packages `source`, `release`, `render`, `store`, `notify`).
 
-**Interface.** The commands, their output and their exit codes are versioned: an incompatible change needs a new major version. Consumers pin a release of ship by SHA.
+**Interface.** The commands, their output and their exit codes are versioned: an incompatible change needs a new major version. `ci-templates` calls `ambrdk/ship/setup@v1` with an exact `version`, which fails the job when that release cannot be installed. The deploy repository pins `setup` and the notify action by SHA; without a `version` input, setup falls back to building the pinned ref from source.
 
 The deploy repository's own `CONTEXT.md` describes the same Pin, Bump and Lane from its side.
