@@ -117,7 +117,7 @@ func TestLaneCLI(t *testing.T) {
 func useForge(t *testing.T, f *fake.Forge) {
 	t.Helper()
 	old := openForge
-	openForge = func(config.Config, string) (forge.Reader, error) { return f, nil }
+	openForge = func(config.Config, string) (forge.Forge, error) { return f, nil }
 	t.Cleanup(func() { openForge = old })
 }
 

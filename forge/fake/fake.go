@@ -26,6 +26,7 @@ type repo struct {
 	checks        map[string][]forge.Check
 	comments      map[int][]forge.Comment
 	pullsByCommit map[string][]int
+	autoMerge     map[int]bool
 }
 
 type Forge struct {
@@ -52,6 +53,7 @@ func (f *Forge) repo(name string) *repo {
 			checks:        map[string][]forge.Check{},
 			comments:      map[int][]forge.Comment{},
 			pullsByCommit: map[string][]int{},
+			autoMerge:     map[int]bool{},
 		}
 		f.repos[name] = r
 	}

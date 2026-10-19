@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("not found")
-	ErrTooMany  = errors.New("too many changed files")
+	ErrNotFound     = errors.New("not found")
+	ErrTooMany      = errors.New("too many changed files")
+	ErrTagElsewhere = errors.New("tag points at another commit")
 )
 
 type ChangeState string
@@ -71,6 +72,31 @@ type Reader interface {
 	Checks(ctx context.Context, repo, sha string) ([]Check, error)
 	Comments(ctx context.Context, repo string, n int) ([]Comment, error)
 	Viewer(ctx context.Context) (string, error)
+}
+
+type ChangeRequest struct {
+	Base    string
+	Branch  string
+	Title   string
+	Message string
+	Files   map[string][]byte
+}
+
+type Writer interface {
+	CreateTag(ctx context.Context, repo, tag, sha string) error
+	PushChange(ctx context.Context, repo string, req ChangeRequest) (Change, error)
+	CloseChange(ctx context.Context, repo string, n int, deleteBranch bool) error
+	CreateComment(ctx context.Context, repo string, n int, body string) (Comment, error)
+	UpdateComment(ctx context.Context, repo string, id int64, body string) error
+}
+
+type AutoMerger interface {
+	AutoMerge(ctx context.Context, repo string, n int) error
+}
+
+type Forge interface {
+	Reader
+	Writer
 }
 
 func SplitRepo(repo string) (string, string, error) {

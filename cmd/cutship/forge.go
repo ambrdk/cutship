@@ -8,7 +8,7 @@ import (
 	"github.com/ambrdk/cutship/forge/github"
 )
 
-var openForge = func(cfg config.Config, token string) (forge.Reader, error) {
+var openForge = func(cfg config.Config, token string) (forge.Forge, error) {
 	base := cfg.Forge.URL
 	if base == "" {
 		base = os.Getenv("GITHUB_API_URL")
