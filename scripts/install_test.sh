@@ -9,6 +9,10 @@ mkdir -p "$work/bin"
 cat > "$work/bin/gh" <<'GH'
 #!/usr/bin/env bash
 if [[ "$1" == api ]]; then
+  if [[ -n "${FAKE_API_FAIL:-}" ]]; then
+    echo "HTTP 401: Bad credentials" >&2
+    exit 1
+  fi
   printf '%s' "$FAKE_TAGS"
   exit 0
 fi
@@ -116,6 +120,29 @@ test_no_release() {
   expect_error windows "unsupported" install windows v0.3.0 Windows X64
 }
 
+test_gh_errors_shown() {
+  expect_error apifail "listing tags failed: HTTP 401: Bad credentials" install apifail v0.3.0 Linux X64 FAKE_API_FAIL=1
+  expect_error noassetmsg "no assets match the file pattern" install noassetmsg bbb Linux X64
+}
+
+test_missing_tools() {
+  local tool t
+  for tool in gh jq; do
+    mkdir -p "$work/no$tool"
+    for t in bash env dirname uname awk mktemp tar shasum sha256sum chmod mkdir sort tail cat tr jq; do
+      [[ "$t" == "$tool" ]] && continue
+      command -v "$t" > /dev/null && ln -sf "$(command -v "$t")" "$work/no$tool/$t"
+    done
+    [[ "$tool" == gh ]] || ln -sf "$work/bin/gh" "$work/no$tool/gh"
+    expect_error "no$tool" "$tool is not on PATH" install_without "$tool"
+  done
+}
+
+install_without() {
+  env PATH="$work/no$1" FAKE_TAGS="$tags" FAKE_ASSETS="v0.3.0" FAKE_LOG="$work/no$1.log" RUNNER_OS=Linux RUNNER_ARCH=X64 \
+    "$work/no$1/bash" "$dir/install.sh" ambrdk/cutship v0.3.0 "$work/no$1-dest" 2>&1
+}
+
 test_explicit_version() {
   local out
   out="$(install moving v1 Linux X64)" || fail "moving: exit $?"
@@ -128,6 +155,8 @@ test_checksum_mismatch
 test_missing_checksum
 test_no_release
 test_explicit_version
+test_gh_errors_shown
+test_missing_tools
 
 echo "$failed failed"
 [[ "$failed" -eq 0 ]]
