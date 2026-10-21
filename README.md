@@ -85,7 +85,7 @@ Between runs, the state of each release lives in a hidden comment on the bump pu
 
 If Telegram fails, the command still does its job and prints a `::warning::` with the reason; the next stage publishes the post with the whole history. Repeated events change nothing: every event has an id, and seen ids are kept in the state.
 
-`release`, `deploy` and `notify` publish with the same bot and are not serialized across repositories. The bot reads `getUpdates` to find the copy of its post in the discussion group, and Telegram allows one reader per token, so two commands publishing at the same moment can miss the copy; the warning says so and the next stage looks for it again. Each command re-reads the state right before it writes and publishes the newest state it can read; two writes to the same state within the same second can still lose one timeline line or show an older stage until the next event.
+`release`, `deploy` and `notify` publish with the same bot and are not serialized across repositories. The bot reads `getUpdates` to find the copy of its post in the discussion group, and Telegram allows one reader per token. When another command holds the poll, the bot waits a second and asks again for up to 30 seconds; if the copy still does not show up, the warning says so and the next stage looks for it again. Calls to the messengers in one command stop after two minutes in total, and the state is kept. Each command re-reads the state right before it writes and publishes the newest state it can read; two writes to the same state within the same second can still lose one timeline line or show an older stage until the next event.
 
 ## Status
 
