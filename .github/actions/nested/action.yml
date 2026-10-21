@@ -1,0 +1,17 @@
+name: nested cutship
+description: Install cutship from inside another composite action, the way a wrapper does
+inputs:
+  version:
+    description: Release tag to install
+    required: true
+outputs:
+  version:
+    description: Installed release tag
+    value: ${{ steps.cutship.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - id: cutship
+      uses: ./
+      with:
+        version: ${{ inputs.version }}
