@@ -114,6 +114,31 @@ func TestStateUpdateMergesConcurrentEvents(t *testing.T) {
 	}
 }
 
+func TestStateUpdateSkipsUnchangedComment(t *testing.T) {
+	f, s, n := setup(t)
+	if _, err := s.Update(ctx, n, "alert-relay", apply(opened("e1"))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(ctx, n, "alert-relay", apply(opened("e1"))); err != nil {
+		t.Fatal(err)
+	}
+	updates := 0
+	for _, c := range f.Calls {
+		if c == "UpdateComment" {
+			updates++
+		}
+	}
+	if updates != 0 {
+		t.Fatalf("calls %v: a replayed event rewrote the state comment", f.Calls)
+	}
+	if _, err := s.Update(ctx, n, "alert-relay", apply(opened("e2"))); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.Calls, ","), "UpdateComment") {
+		t.Fatalf("calls %v: a new event did not update the comment", f.Calls)
+	}
+}
+
 func TestStateAcrossTokenIdentities(t *testing.T) {
 	f := fake.New("release-pat")
 	f.Commit(deployRepo, "main", nil)

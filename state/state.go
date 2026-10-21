@@ -101,18 +101,24 @@ func parse(change int, body string) (Record, bool) {
 	return Record{}, false
 }
 
-func (s *Store) find(ctx context.Context, ch forge.Change, app string) (int64, Record, bool, error) {
+type found struct {
+	id     int64
+	body   string
+	record Record
+	ok     bool
+}
+
+func (s *Store) find(ctx context.Context, ch forge.Change, app string) (found, error) {
 	self, err := s.self(ctx)
 	if err != nil {
-		return 0, Record{}, false, err
+		return found{}, err
 	}
 	change := ch.Number
 	comments, err := s.f.Comments(ctx, s.repo, change)
 	if err != nil {
-		return 0, Record{}, false, err
+		return found{}, err
 	}
-	var broken, old int64
-	var oldRecord Record
+	var broken, old found
 	for _, c := range comments {
 		if c.Author != self && (ch.Author == "" || c.Author != ch.Author) {
 			continue
@@ -121,36 +127,37 @@ func (s *Store) find(ctx context.Context, ch forge.Change, app string) (int64, R
 		case strings.Contains(c.Body, anyMarker):
 			r, ok := parse(change, c.Body)
 			if !ok {
-				if broken == 0 {
-					broken = c.ID
+				if broken.id == 0 {
+					broken = found{id: c.ID, body: c.Body}
 				}
 				continue
 			}
 			if r.App == app || r.App == "" {
-				return c.ID, r, true, nil
+				return found{id: c.ID, body: c.Body, record: r, ok: true}, nil
 			}
-		case old == 0 && strings.Contains(c.Body, oldAny):
+		case old.id == 0 && strings.Contains(c.Body, oldAny):
 			if r, ok := parse(change, c.Body); ok && (r.App == app || r.App == "") {
-				old, oldRecord = c.ID, r
-			} else if !ok && broken == 0 {
-				broken = c.ID
+				old = found{id: c.ID, body: c.Body, record: r, ok: true}
+			} else if !ok && broken.id == 0 {
+				broken = found{id: c.ID, body: c.Body}
 			}
 		}
 	}
-	if old != 0 {
-		return old, oldRecord, true, nil
+	if old.id != 0 {
+		return old, nil
 	}
-	return broken, Record{}, false, nil
+	return broken, nil
 }
 
 func (s *Store) Load(ctx context.Context, ch forge.Change, app string) (Record, bool, error) {
-	_, r, ok, err := s.find(ctx, ch, app)
-	return r, ok, err
+	f, err := s.find(ctx, ch, app)
+	return f.record, f.ok, err
 }
 
 func (s *Store) Update(ctx context.Context, ch forge.Change, app string, apply func(*Record)) (Record, error) {
 	change := ch.Number
-	id, r, _, err := s.find(ctx, ch, app)
+	f, err := s.find(ctx, ch, app)
+	id, r := f.id, f.record
 	if err != nil {
 		return Record{}, err
 	}
@@ -164,6 +171,9 @@ func (s *Store) Update(ctx context.Context, ch forge.Change, app string, apply f
 		return Record{}, err
 	}
 	body := s.link(r) + "\n\n" + marker + string(raw) + markerEnd
+	if id != 0 && body == f.body {
+		return r, nil
+	}
 	if id != 0 {
 		return r, s.f.UpdateComment(ctx, s.repo, id, body)
 	}
