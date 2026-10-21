@@ -3,7 +3,7 @@ module github.com/ambrdk/cutship
 go 1.26.0
 
 require (
-	github.com/ambrdk/notifykit v0.3.0
+	github.com/ambrdk/notifykit v0.3.1
 	github.com/go-telegram/bot v1.27.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/google/go-github/v92 v92.0.0

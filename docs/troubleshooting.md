@@ -52,7 +52,7 @@ Add the label to the image build, for example `labels: org.opencontainers.image.
 Telegram failed. The command still did its job; the next stage of the release publishes the post with the whole history.
 
 **`the post went out without a comment: its copy did not show up in the discussion group in time`**
-The bot is not an admin of the discussion group, or another cutship run was reading updates with the same bot at that moment. `cutship validate --online` tells which. The next stage looks for the copy again.
+The bot is not an admin of the discussion group, or another cutship run kept reading updates with the same bot for the whole 30 seconds the bot waits for the copy. `cutship validate --online` tells which. The next stage looks for the copy again.
 
 **`the channel has no discussion group or it could not be read`**
 Link a discussion group to the channel, or live with posts without the comment.
