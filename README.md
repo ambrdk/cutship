@@ -59,7 +59,7 @@ This takes about ten minutes. The full walk-through with every setting is in [do
 
 ## Install
 
-In GitHub Actions, `uses: ambrdk/cutship@v0.3.0` or `uses: ambrdk/cutship@<full sha> # v0.3.0` puts that release on `PATH` after checking its checksum. A full SHA is the safer pin; the examples use the version for readability. The Action never builds from source: a commit without a release fails the job. The `version` input installs another release instead.
+In GitHub Actions, `uses: ambrdk/cutship@v0.3.0` or `uses: ambrdk/cutship@<full sha> # v0.3.0` puts that release on `PATH` after checking its checksum. A full SHA is the safer pin; the examples use the version for readability. The Action never builds from source: a commit without a release fails the job. The `version` input installs another release instead. Inside another composite action GitHub does not tell the Action which ref it was pinned to, so a wrapper passes `version` itself; `repository` points the Action at a fork's releases.
 
 Elsewhere, download an archive and `checksums.txt` from the [releases](https://github.com/ambrdk/cutship/releases) or run the image `ghcr.io/ambrdk/cutship`. How to verify the cosign signature is in [docs/tokens.md](docs/tokens.md#verifying-a-release).
 

@@ -5,6 +5,10 @@ inputs:
     description: Release tag to install, such as v0.3.0; empty means the release this action is pinned to
     required: false
     default: ""
+  repository:
+    description: Repository whose releases to install, for a fork of cutship
+    required: false
+    default: ambrdk/cutship
 outputs:
   version:
     description: Installed release tag
@@ -19,7 +23,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        REPO: ${{ github.action_repository || github.repository }}
+        REPO: ${{ inputs.repository }}
         REF: ${{ inputs.version || github.action_ref }}
       run: '"$GITHUB_ACTION_PATH/scripts/install.sh" "$REPO" "$REF" "$RUNNER_TEMP/cutship" >> "$GITHUB_OUTPUT"'
 

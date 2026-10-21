@@ -116,7 +116,7 @@ test_no_release() {
   expect_error norelease "no release tag" install norelease ddd Linux X64
   expect_error noasset "has no" install noasset bbb Linux X64
   expect_error unknown "no release tag" install unknown v9.9.9 Linux X64
-  expect_error empty "no version" install empty "" Linux X64
+  expect_error empty "pass the version input" install empty "" Linux X64
   expect_error windows "unsupported" install windows v0.3.0 Windows X64
 }
 

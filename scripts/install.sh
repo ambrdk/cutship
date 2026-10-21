@@ -16,7 +16,7 @@ fail() {
   exit 1
 }
 
-[[ -n "$ref" ]] || fail "no version or ref given"
+[[ -n "$ref" ]] || fail "no version or ref given; pass the version input when cutship runs inside another composite action, where GitHub leaves github.action_ref empty"
 
 for tool in gh jq; do
   command -v "$tool" >/dev/null 2>&1 || fail "$tool is not on PATH; GitHub-hosted runners have it, install it on a self-hosted runner"
