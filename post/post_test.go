@@ -2,6 +2,7 @@ package post
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/ambrdk/cutship/forge/fake"
 	"github.com/ambrdk/cutship/notifier"
 	nfake "github.com/ambrdk/cutship/notifier/fake"
+	"github.com/ambrdk/cutship/render"
 )
 
 const repo = "ambrdk/ansible"
@@ -196,5 +198,33 @@ func TestApplyWithoutNotifiers(t *testing.T) {
 	}
 	if got := w.f.CommentsOf(repo, w.target.Change.Number); len(got) != 1 || !strings.HasPrefix(got[0].Body, "cutship release alert-relay v0.3.1") {
 		t.Fatalf("comments %+v", got)
+	}
+}
+
+type stuck struct{}
+
+func (stuck) Key() string { return "stuck" }
+
+func (stuck) Publish(ctx context.Context, _ json.RawMessage, _ render.View) (json.RawMessage, notifier.Status, error) {
+	<-ctx.Done()
+	return nil, notifier.OK, ctx.Err()
+}
+
+func (stuck) Link(json.RawMessage) string { return "" }
+
+func (stuck) Done(json.RawMessage) bool { return false }
+
+func TestSendStopsAtTheTimeLimit(t *testing.T) {
+	old := publishLimit
+	publishLimit = 50 * time.Millisecond
+	t.Cleanup(func() { publishLimit = old })
+	var warnings []string
+	start := time.Now()
+	refs := Send(ctx, []notifier.Notifier{stuck{}, stuck{}}, func(w string) { warnings = append(warnings, w) }, render.View{}, nil, true)
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("send took %v, want it bounded by the limit for all notifiers together", took)
+	}
+	if len(refs) != 0 || len(warnings) != 2 || !strings.Contains(warnings[0], "deadline") {
+		t.Fatalf("refs %v warnings %v", refs, warnings)
 	}
 }

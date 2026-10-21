@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"time"
 
 	"github.com/ambrdk/cutship/event"
 	"github.com/ambrdk/cutship/forge"
@@ -17,6 +18,8 @@ import (
 )
 
 const migratedTelegram = "telegram"
+
+var publishLimit = 2 * time.Minute
 
 type Target struct {
 	Change forge.Change
@@ -68,6 +71,8 @@ func (p *Publisher) migrate(r *state.Record) {
 
 func Send(ctx context.Context, ns []notifier.Notifier, warn func(string), view render.View, messages map[string]json.RawMessage, changed bool) map[string]json.RawMessage {
 	refs := map[string]json.RawMessage{}
+	ctx, cancel := context.WithTimeout(ctx, publishLimit)
+	defer cancel()
 	for _, n := range ns {
 		old := messages[n.Key()]
 		if !changed && (len(old) == 0 || n.Done(old)) {
